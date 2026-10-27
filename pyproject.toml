@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "morph-mimic"
+version = "0.1.0"
+description = "Reproduction of 'Humanoid Mobility via Attention-based Contacts' (arXiv 2610.31608) in Isaac Lab, with G1 and mojia assets migrated from supermimic"
+requires-python = ">=3.10"
+dependencies = ["numpy", "torch", "tensorboard", "trimesh"]
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-subtests"]
+reference = ["mujoco>=3.3", "scipy"]
+
+[tool.setuptools.packages.find]
+include = ["morph_mimic*"]

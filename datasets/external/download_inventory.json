@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "download_date": "2026-10-27",
+  "path_base": "datasets/external",
+  "downloaded_source_bytes": 643002294,
+  "extracted_data_bytes": 1336671087,
+  "motion_clip_count_including_variants": 712,
+  "training_ingestion_completed": false,
+  "physics_replay_validated": false,
+  "sources": [
+    {
+      "id": "omniretarget",
+      "local_directory": "omniretarget",
+      "upstream_revision": "135259130158f1cb1799e4ab9b6566c938285fc9",
+      "download_bytes": 142549907,
+      "extracted_bytes": 57410426,
+      "source_files_verified": 333,
+      "motion_clips": 293,
+      "motion_scene_matches": 283,
+      "scene_mapping_unresolved": 10,
+      "integrity": "HF LFS SHA256 or Git blob SHA1; ZIP CRC",
+      "status": "downloaded_extracted_checked",
+      "training_ready": false,
+      "report_path": "omniretarget/download_report.json",
+      "report_sha256": "5bd796ee351d29fb2644e90e17b168fce71bc6982e2936b29dbd4d9dfc3b35da"
+    },
+    {
+      "id": "php_parkour",
+      "local_directory": "php_parkour",
+      "upstream_revision": "c7c9ce3fc75a8754a7e403c58de3b6933254d01b",
+      "download_bytes": 346615357,
+      "extracted_bytes": 848974641,
+      "source_files_verified": 680,
+      "motion_clips": 296,
+      "motion_scene_matches": 296,
+      "atomic_databases": 19,
+      "integrity": "Official manifest archive and per-file SHA256 and size",
+      "status": "downloaded_extracted_checked",
+      "training_ready": false,
+      "report_path": "php_parkour/download_report.json",
+      "report_sha256": "49dd9ab22721e9b7c6c322cfeffa84b0c14ebbaeb2c2ddbbe13f29edf22ece3a"
+    },
+    {
+      "id": "videomimic",
+      "local_directory": "videomimic",
+      "upstream_drive_file_id": "11zjLwc-gV_xsNe2ON-XSvj4L1qk78tNO",
+      "download_bytes": 153837030,
+      "extracted_bytes": 430286020,
+      "motion_clips": 123,
+      "motion_scene_matches": 123,
+      "config_exact_name_matches": 49,
+      "config_unique_substring_matches": 74,
+      "stairs_pairs": 4,
+      "integrity": "Remote length and ZIP CRC; local SHA256 has no upstream expected digest",
+      "archive_sha256": "fab91d02bd2c633a3d1423e0156a051990ccc6906c867f20a64312f5b7d3bf59",
+      "timing_convention_resolved": false,
+      "status": "downloaded_extracted_checked",
+      "training_ready": false,
+      "report_path": "videomimic/download_report.json",
+      "report_sha256": "c37aab35a5918cd522697d30e5cb64fca27c5311420c10c87782307302b0f5ad"
+    }
+  ],
+  "not_downloaded": [
+    "PARC full archive (public metadata only)",
+    "Kimodo weights",
+    "Mixamo",
+    "LadderMan full training data"
+  ],
+  "existing_local_candidates": "references/data_sources/local_motion_candidates.json",
+  "derived_reference_pipeline": "datasets/g1_box_climb_seed_v2/validation_status.json",
+  "one_scene_ingestion_completed": true
+}

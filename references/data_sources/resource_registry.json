@@ -1,0 +1,195 @@
+{
+  "schema": 1,
+  "checked_date": "2026-10-27",
+  "assets_downloaded": true,
+  "training_ingestion_completed": false,
+  "sources": [
+    {
+      "id": "omniretarget",
+      "priority": 1,
+      "skills": [
+        "box_climb",
+        "terrain_interaction"
+      ],
+      "official": "https://omniretarget.github.io/",
+      "dataset": "https://huggingface.co/datasets/omniretarget/OmniRetarget_Dataset/tree/main",
+      "data_card": "https://huggingface.co/datasets/omniretarget/OmniRetarget_Dataset/blob/main/README.md",
+      "download": "https://huggingface.co/datasets/omniretarget/OmniRetarget_Dataset/resolve/main/robot-terrain.zip",
+      "scene_assets": "https://huggingface.co/datasets/omniretarget/OmniRetarget_Dataset/tree/main/models/terrain",
+      "robot": "G1 29DoF",
+      "paired_scene": true,
+      "format": "npz fps/qpos; root WXYZ then XYZ then 29 joints; optional object pose; 112 clips also have human_joints(T,53,3) with undocumented skeleton semantics",
+      "license_declared": "MIT dataset card; upstream subset restrictions still apply",
+      "status": "downloaded_verified_one_scene_ingested_for_pipeline_check",
+      "assets_downloaded": true,
+      "training_ingestion_completed": false,
+      "local_root": "datasets/external/omniretarget",
+      "report": "datasets/external/omniretarget/download_report.json",
+      "revision": "135259130158f1cb1799e4ab9b6566c938285fc9",
+      "motion_clips": 293,
+      "motion_scene_matches": 283,
+      "scene_mapping_unresolved": 10,
+      "download_scope": [
+        "robot-terrain.zip",
+        "robot-object-terrain.zip",
+        "models/**",
+        "README.md",
+        "visualize.py"
+      ],
+      "derived_reference": "datasets/g1_box_climb_seed_v2",
+      "pipeline_iterations": 5,
+      "full_skill_reproduced": false
+    },
+    {
+      "id": "php_prepared",
+      "priority": 1,
+      "skills": [
+        "box_climb",
+        "step",
+        "locomotion"
+      ],
+      "official": "https://github.com/amazon-far/php_parkour",
+      "dataset": "https://github.com/amazon-far/php_parkour/releases/tag/training-motion-examples-v1",
+      "download": "https://github.com/amazon-far/php_parkour/releases/download/training-motion-examples-v1/php-motions-low-climb-76-v1.tar.gz",
+      "manifest": "https://raw.githubusercontent.com/amazon-far/php_parkour/main/release-assets.json",
+      "robot": "G1",
+      "paired_scene": true,
+      "format": "motion.npz at 50fps plus terrain.npy and terrain.obj",
+      "status": "downloaded_verified_not_imported",
+      "note": "Prepared five bundles do not include a standalone hurdle bundle",
+      "assets_downloaded": true,
+      "training_ingestion_completed": false,
+      "local_root": "datasets/external/php_parkour",
+      "report": "datasets/external/php_parkour/download_report.json",
+      "revision": "c7c9ce3fc75a8754a7e403c58de3b6933254d01b",
+      "motion_terrain_pairs": 296
+    },
+    {
+      "id": "php_atomic_databases",
+      "priority": 1,
+      "skills": [
+        "hurdle",
+        "cat_vault",
+        "dash_vault",
+        "speed_vault"
+      ],
+      "official": "https://github.com/amazon-far/php_parkour/blob/main/motion_matching/README.md",
+      "download": "https://github.com/amazon-far/php_parkour/releases/download/motion-matching-assets-v1/php-motion-matching-database-v1.tar.gz",
+      "archive_bytes": 39876439,
+      "archive_sha256": "df645d933fff5415714d26748537c6662713db580ee0746f1c4141931d4d09c5",
+      "robot": "G1",
+      "paired_scene": true,
+      "format": "binary skill database plus terrain JSON/OBJ; requires source decoder/generator",
+      "status": "downloaded_verified_requires_export",
+      "assets_downloaded": true,
+      "training_ingestion_completed": false,
+      "local_root": "datasets/external/php_parkour/databases",
+      "report": "datasets/external/php_parkour/download_report.json",
+      "revision": "c7c9ce3fc75a8754a7e403c58de3b6933254d01b",
+      "database_files": 19
+    },
+    {
+      "id": "videomimic",
+      "priority": 1,
+      "skills": [
+        "stairs",
+        "scene_traversal"
+      ],
+      "official": "https://github.com/hongsukchoi/VideoMimic",
+      "download_script": "https://github.com/hongsukchoi/VideoMimic/blob/main/simulation/data/download_videomimic_data.sh",
+      "captures_google_drive_id": "11zjLwc-gV_xsNe2ON-XSvj4L1qk78tNO",
+      "pairing_manifest": "https://github.com/hongsukchoi/VideoMimic/blob/main/simulation/videomimic_gym/resources/data_config/human_motion_list_123_motions.yaml",
+      "robot": "G1",
+      "paired_scene": true,
+      "format": "H5 23 joints + OBJ; 30/15fps H5 attrs versus 60/6fps official config override; four stairs 30 versus60",
+      "license_note": "Code MIT; independent data terms not established in this audit",
+      "status": "downloaded_crc_checked_not_imported",
+      "assets_downloaded": true,
+      "training_ingestion_completed": false,
+      "local_root": "datasets/external/videomimic",
+      "report": "datasets/external/videomimic/download_report.json",
+      "motion_scene_pairs": 123,
+      "stairs_pairs": 4,
+      "config_exact_name_matches": 49,
+      "config_unique_substring_matches": 74,
+      "timing_convention_resolved": false
+    },
+    {
+      "id": "bones_seed_local",
+      "priority": 1,
+      "skills": [
+        "box_climb",
+        "stairs",
+        "vault",
+        "ladder"
+      ],
+      "official": "https://huggingface.co/datasets/bones-studio/seed",
+      "local_root": "/home/user/Beyondmimic/Dataset-mimic/G1_bones-seed",
+      "paired_scene": false,
+      "robot": "G1 plus SOMA human skeletons",
+      "format": "G1 CSV / SOMA BVH, declared120fps; units/Euler conventions require verification",
+      "license_url": "https://bones.studio/info/seed-license",
+      "candidate_manifest": "local_motion_candidates.json",
+      "status": "four_exact_local_candidates_verified_not_imported",
+      "assets_downloaded": false
+    },
+    {
+      "id": "parc",
+      "priority": 2,
+      "skills": [
+        "climb",
+        "vault",
+        "stairs"
+      ],
+      "official": "https://github.com/mshoe/PARC",
+      "dataset": "https://huggingface.co/datasets/mxucg/PARC",
+      "paired_scene": true,
+      "robot": "character humanoid; retarget required",
+      "format": "motion_data + body_contacts + terrain_data heightfield",
+      "status": "public_download_verified_metadata_only",
+      "assets_downloaded": false,
+      "archive_bytes": 3907916685,
+      "download_check": "download_checks/parc_public_download_check.json"
+    },
+    {
+      "id": "kimodo",
+      "priority": 2,
+      "skills": [
+        "vault",
+        "generated_reference"
+      ],
+      "official": "https://github.com/nv-tlabs/kimodo",
+      "weights": "https://huggingface.co/nvidia/Kimodo-G1-RP-v1",
+      "paired_scene": false,
+      "robot": "G1 output model available",
+      "note": "Generator, not the exact ACP vault trajectories. User constraints and scene alignment needed.",
+      "status": "official_generator_verified_not_downloaded",
+      "assets_downloaded": false
+    },
+    {
+      "id": "ladderman",
+      "priority": 2,
+      "skills": [
+        "ladder"
+      ],
+      "official": "https://ladderman-robot.github.io/",
+      "paper": "https://arxiv.org/html/2606.05873v1",
+      "repository": "https://github.com/amazon-far/LadderMan",
+      "paired_scene": null,
+      "status": "method_reference_full_training_data_not_verified",
+      "assets_downloaded": false
+    },
+    {
+      "id": "mgmt",
+      "priority": 2,
+      "official": "https://wholebodylocomotion.github.io/",
+      "paper_data_section": "https://arxiv.org/html/2604.17335v1#S3.SS1",
+      "note": "Data curation/terrain alignment/tracker rerecording recipe; exact full original corpus download not verified",
+      "status": "method_and_sources_verified",
+      "assets_downloaded": false
+    }
+  ],
+  "download_scope": "selected_public_datasets",
+  "download_inventory": "../../datasets/external/download_inventory.json",
+  "training_ingestion_scope": "One derived G1 OmniRetarget scene completed a 5-iteration pipeline check; bulk dataset ingestion and full skill training remain incomplete."
+}

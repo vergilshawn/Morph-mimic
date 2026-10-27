@@ -1,0 +1,54 @@
+# Local tooling and credentials
+/.agents/
+/.codex/
+/.aws/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+.DS_Store
+.idea/
+.vscode/
+
+# Python and generated build/cache files
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+/build/
+/dist/
+/.venv/
+/venv/
+/.cache/
+
+# Training outputs remain local; background jobs may keep writing here.
+/runs/
+*.pt
+*.pth
+*.ckpt
+events.out.tfevents.*
+
+# Migrated motion corpora; retain the robot models, meshes and source manifests.
+/assets/*/motions/
+/assets/mojia/raw/
+
+# Downloaded/derived data. Keep only the small dataset descriptions and inventory.
+/datasets/*
+!/datasets/external/
+/datasets/external/*
+!/datasets/external/README.md
+!/datasets/external/download_inventory.json
+!/datasets/g1_box_climb_seed_v2/
+/datasets/g1_box_climb_seed_v2/*
+!/datasets/g1_box_climb_seed_v2/README.md
+
+# Local copies of papers and downloaded source inspection snapshots.
+/references/acp/
+/references/data_sources/download_checks/

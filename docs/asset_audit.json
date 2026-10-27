@@ -1,0 +1,586 @@
+{
+  "ok": true,
+  "robots": [
+    {
+      "robot": "g1",
+      "errors": [],
+      "warnings": [
+        "G1 runtime uses an Isaac Lab USD configuration; local MJCF motions alone do not verify model equivalence or USD availability.",
+        "40/40 clips lack force-derived nine-body contact labels."
+      ],
+      "migration": {
+        "available": true,
+        "source": "/media/user/DATA/supermimic/data/g1",
+        "files": 81,
+        "missing": [],
+        "changed": [],
+        "verification": "sha256"
+      },
+      "joints": {
+        "total": 29,
+        "controlled": 23
+      },
+      "runtime_assets": {
+        "urdf": null,
+        "usd_cfg": "isaaclab_assets:G1_29DOF_CFG (29-DOF; dynamics equivalence to local MJCF requires validation)",
+        "mjcf": "assets/g1/robot/g1.xml"
+      },
+      "data_provenance": {
+        "official_supermimic_code": false
+      },
+      "manifest_hash_mismatches": [],
+      "dependency_hash_mismatches": [],
+      "motions": {
+        "clips": 40,
+        "frames": 441140,
+        "duration_hours": 2.4505555555555567,
+        "minimum_root_height_m": 0.02869500033557415,
+        "maximum_frames": 13656
+      },
+      "clips": [
+        {
+          "name": "dance1_subject1",
+          "frames": 6574,
+          "fps": 50.0
+        },
+        {
+          "name": "dance1_subject2",
+          "frames": 6574,
+          "fps": 50.0
+        },
+        {
+          "name": "dance1_subject3",
+          "frames": 6574,
+          "fps": 50.0
+        },
+        {
+          "name": "dance2_subject1",
+          "frames": 11284,
+          "fps": 50.0
+        },
+        {
+          "name": "dance2_subject2",
+          "frames": 11284,
+          "fps": 50.0
+        },
+        {
+          "name": "dance2_subject3",
+          "frames": 11284,
+          "fps": 50.0
+        },
+        {
+          "name": "dance2_subject4",
+          "frames": 11284,
+          "fps": 50.0
+        },
+        {
+          "name": "dance2_subject5",
+          "frames": 11284,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp1_subject1",
+          "frames": 8411,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp1_subject4",
+          "frames": 8411,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp1_subject5",
+          "frames": 8411,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp2_subject2",
+          "frames": 8196,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp2_subject3",
+          "frames": 8196,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp3_subject1",
+          "frames": 5109,
+          "fps": 50.0
+        },
+        {
+          "name": "fight1_subject2",
+          "frames": 12244,
+          "fps": 50.0
+        },
+        {
+          "name": "fight1_subject3",
+          "frames": 12244,
+          "fps": 50.0
+        },
+        {
+          "name": "fight1_subject5",
+          "frames": 12244,
+          "fps": 50.0
+        },
+        {
+          "name": "fightAndSports1_subject1",
+          "frames": 12257,
+          "fps": 50.0
+        },
+        {
+          "name": "fightAndSports1_subject4",
+          "frames": 12257,
+          "fps": 50.0
+        },
+        {
+          "name": "jumps1_subject1",
+          "frames": 12222,
+          "fps": 50.0
+        },
+        {
+          "name": "jumps1_subject2",
+          "frames": 12222,
+          "fps": 50.0
+        },
+        {
+          "name": "jumps1_subject5",
+          "frames": 12222,
+          "fps": 50.0
+        },
+        {
+          "name": "run1_subject2",
+          "frames": 11891,
+          "fps": 50.0
+        },
+        {
+          "name": "run1_subject5",
+          "frames": 11891,
+          "fps": 50.0
+        },
+        {
+          "name": "run2_subject1",
+          "frames": 12241,
+          "fps": 50.0
+        },
+        {
+          "name": "run2_subject4",
+          "frames": 12241,
+          "fps": 50.0
+        },
+        {
+          "name": "sprint1_subject2",
+          "frames": 13656,
+          "fps": 50.0
+        },
+        {
+          "name": "sprint1_subject4",
+          "frames": 13656,
+          "fps": 50.0
+        },
+        {
+          "name": "walk1_subject1",
+          "frames": 13066,
+          "fps": 50.0
+        },
+        {
+          "name": "walk1_subject2",
+          "frames": 13066,
+          "fps": 50.0
+        },
+        {
+          "name": "walk1_subject5",
+          "frames": 13066,
+          "fps": 50.0
+        },
+        {
+          "name": "walk2_subject1",
+          "frames": 11909,
+          "fps": 50.0
+        },
+        {
+          "name": "walk2_subject3",
+          "frames": 11909,
+          "fps": 50.0
+        },
+        {
+          "name": "walk2_subject4",
+          "frames": 11909,
+          "fps": 50.0
+        },
+        {
+          "name": "walk3_subject1",
+          "frames": 12331,
+          "fps": 50.0
+        },
+        {
+          "name": "walk3_subject2",
+          "frames": 12331,
+          "fps": 50.0
+        },
+        {
+          "name": "walk3_subject3",
+          "frames": 12331,
+          "fps": 50.0
+        },
+        {
+          "name": "walk3_subject4",
+          "frames": 12331,
+          "fps": 50.0
+        },
+        {
+          "name": "walk3_subject5",
+          "frames": 12331,
+          "fps": 50.0
+        },
+        {
+          "name": "walk4_subject1",
+          "frames": 8196,
+          "fps": 50.0
+        }
+      ],
+      "contacts": {
+        "valid": 0,
+        "missing": [
+          "dance1_subject1",
+          "dance1_subject2",
+          "dance1_subject3",
+          "dance2_subject1",
+          "dance2_subject2",
+          "dance2_subject3",
+          "dance2_subject4",
+          "dance2_subject5",
+          "fallAndGetUp1_subject1",
+          "fallAndGetUp1_subject4",
+          "fallAndGetUp1_subject5",
+          "fallAndGetUp2_subject2",
+          "fallAndGetUp2_subject3",
+          "fallAndGetUp3_subject1",
+          "fight1_subject2",
+          "fight1_subject3",
+          "fight1_subject5",
+          "fightAndSports1_subject1",
+          "fightAndSports1_subject4",
+          "jumps1_subject1",
+          "jumps1_subject2",
+          "jumps1_subject5",
+          "run1_subject2",
+          "run1_subject5",
+          "run2_subject1",
+          "run2_subject4",
+          "sprint1_subject2",
+          "sprint1_subject4",
+          "walk1_subject1",
+          "walk1_subject2",
+          "walk1_subject5",
+          "walk2_subject1",
+          "walk2_subject3",
+          "walk2_subject4",
+          "walk3_subject1",
+          "walk3_subject2",
+          "walk3_subject3",
+          "walk3_subject4",
+          "walk3_subject5",
+          "walk4_subject1"
+        ],
+        "invalid": []
+      }
+    },
+    {
+      "robot": "mojia",
+      "errors": [],
+      "warnings": [
+        "Reference motions have not passed physical tracking validation.",
+        "40/40 clips lack force-derived nine-body contact labels."
+      ],
+      "migration": {
+        "available": true,
+        "source": "/media/user/DATA/supermimic/data/mojia",
+        "files": 42,
+        "missing": [],
+        "changed": [],
+        "verification": "sha256"
+      },
+      "raw_migration": {
+        "available": true,
+        "source": "/media/user/DATA/supermimic/data/mojia_raw",
+        "files": 81,
+        "missing": [],
+        "changed": [],
+        "verification": "sha256"
+      },
+      "joints": {
+        "total": 23,
+        "controlled": 23
+      },
+      "runtime_assets": {
+        "urdf": "assets/mojia/robot/urdf/robot.urdf",
+        "usd_cfg": null,
+        "mjcf": "assets/mojia/mjcf/mojia_v3_8.xml"
+      },
+      "data_provenance": {
+        "reference_data_only": true,
+        "physical_tracking_validated": false,
+        "hardware_validated": false,
+        "foot_contact_labels": "kinematic floor contact and foot-origin speed < .2m/s; not force labels"
+      },
+      "manifest_hash_mismatches": [],
+      "dependency_hash_mismatches": [],
+      "motions": {
+        "clips": 40,
+        "frames": 441120,
+        "duration_hours": 2.4504444444444435,
+        "minimum_root_height_m": 0.09206640720367432,
+        "maximum_frames": 13655
+      },
+      "clips": [
+        {
+          "name": "dance1_subject1",
+          "frames": 6574,
+          "fps": 50.0
+        },
+        {
+          "name": "dance1_subject2",
+          "frames": 6574,
+          "fps": 50.0
+        },
+        {
+          "name": "dance1_subject3",
+          "frames": 6574,
+          "fps": 50.0
+        },
+        {
+          "name": "dance2_subject1",
+          "frames": 11284,
+          "fps": 50.0
+        },
+        {
+          "name": "dance2_subject2",
+          "frames": 11284,
+          "fps": 50.0
+        },
+        {
+          "name": "dance2_subject3",
+          "frames": 11284,
+          "fps": 50.0
+        },
+        {
+          "name": "dance2_subject4",
+          "frames": 11284,
+          "fps": 50.0
+        },
+        {
+          "name": "dance2_subject5",
+          "frames": 11284,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp1_subject1",
+          "frames": 8410,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp1_subject4",
+          "frames": 8410,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp1_subject5",
+          "frames": 8410,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp2_subject2",
+          "frames": 8195,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp2_subject3",
+          "frames": 8195,
+          "fps": 50.0
+        },
+        {
+          "name": "fallAndGetUp3_subject1",
+          "frames": 5109,
+          "fps": 50.0
+        },
+        {
+          "name": "fight1_subject2",
+          "frames": 12244,
+          "fps": 50.0
+        },
+        {
+          "name": "fight1_subject3",
+          "frames": 12244,
+          "fps": 50.0
+        },
+        {
+          "name": "fight1_subject5",
+          "frames": 12244,
+          "fps": 50.0
+        },
+        {
+          "name": "fightAndSports1_subject1",
+          "frames": 12257,
+          "fps": 50.0
+        },
+        {
+          "name": "fightAndSports1_subject4",
+          "frames": 12257,
+          "fps": 50.0
+        },
+        {
+          "name": "jumps1_subject1",
+          "frames": 12222,
+          "fps": 50.0
+        },
+        {
+          "name": "jumps1_subject2",
+          "frames": 12222,
+          "fps": 50.0
+        },
+        {
+          "name": "jumps1_subject5",
+          "frames": 12222,
+          "fps": 50.0
+        },
+        {
+          "name": "run1_subject2",
+          "frames": 11890,
+          "fps": 50.0
+        },
+        {
+          "name": "run1_subject5",
+          "frames": 11890,
+          "fps": 50.0
+        },
+        {
+          "name": "run2_subject1",
+          "frames": 12240,
+          "fps": 50.0
+        },
+        {
+          "name": "run2_subject4",
+          "frames": 12240,
+          "fps": 50.0
+        },
+        {
+          "name": "sprint1_subject2",
+          "frames": 13655,
+          "fps": 50.0
+        },
+        {
+          "name": "sprint1_subject4",
+          "frames": 13655,
+          "fps": 50.0
+        },
+        {
+          "name": "walk1_subject1",
+          "frames": 13065,
+          "fps": 50.0
+        },
+        {
+          "name": "walk1_subject2",
+          "frames": 13065,
+          "fps": 50.0
+        },
+        {
+          "name": "walk1_subject5",
+          "frames": 13065,
+          "fps": 50.0
+        },
+        {
+          "name": "walk2_subject1",
+          "frames": 11909,
+          "fps": 50.0
+        },
+        {
+          "name": "walk2_subject3",
+          "frames": 11909,
+          "fps": 50.0
+        },
+        {
+          "name": "walk2_subject4",
+          "frames": 11909,
+          "fps": 50.0
+        },
+        {
+          "name": "walk3_subject1",
+          "frames": 12330,
+          "fps": 50.0
+        },
+        {
+          "name": "walk3_subject2",
+          "frames": 12330,
+          "fps": 50.0
+        },
+        {
+          "name": "walk3_subject3",
+          "frames": 12330,
+          "fps": 50.0
+        },
+        {
+          "name": "walk3_subject4",
+          "frames": 12330,
+          "fps": 50.0
+        },
+        {
+          "name": "walk3_subject5",
+          "frames": 12330,
+          "fps": 50.0
+        },
+        {
+          "name": "walk4_subject1",
+          "frames": 8195,
+          "fps": 50.0
+        }
+      ],
+      "contacts": {
+        "valid": 0,
+        "missing": [
+          "dance1_subject1",
+          "dance1_subject2",
+          "dance1_subject3",
+          "dance2_subject1",
+          "dance2_subject2",
+          "dance2_subject3",
+          "dance2_subject4",
+          "dance2_subject5",
+          "fallAndGetUp1_subject1",
+          "fallAndGetUp1_subject4",
+          "fallAndGetUp1_subject5",
+          "fallAndGetUp2_subject2",
+          "fallAndGetUp2_subject3",
+          "fallAndGetUp3_subject1",
+          "fight1_subject2",
+          "fight1_subject3",
+          "fight1_subject5",
+          "fightAndSports1_subject1",
+          "fightAndSports1_subject4",
+          "jumps1_subject1",
+          "jumps1_subject2",
+          "jumps1_subject5",
+          "run1_subject2",
+          "run1_subject5",
+          "run2_subject1",
+          "run2_subject4",
+          "sprint1_subject2",
+          "sprint1_subject4",
+          "walk1_subject1",
+          "walk1_subject2",
+          "walk1_subject5",
+          "walk2_subject1",
+          "walk2_subject3",
+          "walk2_subject4",
+          "walk3_subject1",
+          "walk3_subject2",
+          "walk3_subject3",
+          "walk3_subject4",
+          "walk3_subject5",
+          "walk4_subject1"
+        ],
+        "invalid": []
+      }
+    }
+  ]
+}
