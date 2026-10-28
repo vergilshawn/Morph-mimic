@@ -1,7 +1,7 @@
 """Build a derived reference whose held joints match the controller.
 
     python -m morph_mimic.scripts.project_reference --robot g1 \
-        --source-dir datasets/g1_smoke --output-dir datasets/g1_23dof_smoke
+        --source-dir datasets/g1_walk_candidate --output-dir datasets/g1_walk_projected
 
 The complete joint vector and all named body kinematics are retained. MuJoCo
 provides reference FK only; this does not validate the Isaac Lab runtime asset,

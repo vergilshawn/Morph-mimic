@@ -123,7 +123,7 @@ def build_checkpoint_contract(env, planner=None, *, training_cfg=None):
     cfg = env.cfg
     physics_fields = ("decimation", "action_scale", "action_clip", "contact_history", "contact_force_threshold",
                       "planner_scan_shape", "tracker_scan_shape", "scan_spacing", "scan_max_distance",
-                      "oracle_contact_frame")
+                      "oracle_contact_frame", "held_joint_mode")
     physics = {key: _plain(getattr(cfg, key)) for key in physics_fields if hasattr(cfg, key)}
     physics["physics_dt"] = cfg.sim.dt
     physics["control_dt"] = cfg.sim.dt * cfg.decimation
@@ -139,6 +139,12 @@ def build_checkpoint_contract(env, planner=None, *, training_cfg=None):
     if bindings:
         physics["reference_scenes"] = {name: scene.fingerprint for name, scene in bindings.items()}
         physics["contact_force_source"] = "per_body_terrain_filtered_normal_forces"
+    constraint = getattr(env, "held_joint_constraint_report", None)
+    if constraint and constraint.get("physical_limits_changed"):
+        physics["held_joint_constraints"] = {
+            key: _plain(constraint[key]) for key in
+            ("mode", "joint_names", "nominal_positions_rad", "original_limits_rad")
+        }
     for key in ("gravity", "physx", "physics_material"):
         if hasattr(cfg.sim, key):
             physics[key] = _config_value(getattr(cfg.sim, key))
@@ -161,7 +167,9 @@ def build_checkpoint_contract(env, planner=None, *, training_cfg=None):
             "num_terrain_levels", "csi_enabled", "csi_init_phase", "csi_adjust", "success_horiz", "success_vert",
             "min_height_ref", "min_height_goal", "goal_scale_radius", "ref_goal_scale_radius", "ref_goal_lookahead",
             "grace_steps", "reference_grace_steps", "max_reference_root_error_m",
-            "csi_success_root_error_m", "critic_reference_frame", "min_goal_dist", "max_goal_dist", "seed"}
+            "csi_success_root_error_m", "critic_reference_frame", "min_goal_dist", "max_goal_dist", "seed",
+            "training_profile", "csi_sampling_mode", "contact_acc_reset_mode", "tracker_scan_noise_mode",
+            "joint_limit_reward_source", "reward_telemetry_version", "joint_zero_bias_mode"}
     keys.update(key for key in vars(cfg) if key.startswith(("w_", "dr_", "obs_noise")) or key.endswith("scan_noise"))
     training = {key: _plain(getattr(cfg, key)) for key in sorted(keys) if hasattr(cfg, key)}
     training["num_envs"] = env.num_envs
@@ -176,6 +184,13 @@ def build_checkpoint_contract(env, planner=None, *, training_cfg=None):
         "physics": physics, "versions": versions,
         "planner": type(planner).__name__ if planner is not None else None,
         "training": training,
+        "observations": {
+            "policy_dim": getattr(cfg, "observation_space", None),
+            "action_dim": getattr(cfg, "action_space", None),
+            "policy_schema": "ACP_contact_conditioned_5x75_scan63_contact27_goal3_v1",
+            "reference_critic_dim": 353, "goal_critic_dim": 298,
+            "contact_command_points": "reference_geometry_contact_body_origins; surface-anchor planner integration pending",
+        },
     }
     # Ensure the stored contract remains an ordinary JSON-compatible value.
     json.dumps(contract, sort_keys=True, allow_nan=False)
@@ -196,7 +211,7 @@ def validate_checkpoint_contract(checkpoint, env, planner=None, *, mode="resume"
     if actual is None:
         raise ValueError("Cannot validate a physical checkpoint without a robot/data environment")
     mismatches = []
-    for key in ("schema", "robot", "asset_sha256", "contact_bodies", "physics", "versions"):
+    for key in ("schema", "robot", "asset_sha256", "contact_bodies", "physics", "versions", "observations"):
         if expected.get(key) != actual.get(key):
             mismatches.append(key)
     if ((mode != "transfer" or expected.get("planner") is not None)

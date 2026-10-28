@@ -168,6 +168,9 @@ class AcpEnvCfg(DirectRLEnvCfg):
     csi_init_phase: float = 0.9
     csi_adjust: float = 0.05
     csi_success_root_error_m: float = 0.3  # engineering completion gate
+    # The curriculum value is the initialization phase itself. Historical
+    # runs instead sampled uniformly between this value and 0.99.
+    csi_sampling_mode: str = "curriculum_phase"
     critic_reference_frame: str = "scene_local"
 
     # goal / curriculum
@@ -232,6 +235,14 @@ class AcpEnvCfg(DirectRLEnvCfg):
     obs_noise_jvel: float = 1.5
     planner_scan_noise: float = 0.03
     tracker_scan_noise: float = 0.1
+    tracker_scan_noise_mode: str = "independent_uniform_v1"
+    contact_acc_reset_mode: str = "skip_first_valid_difference_v1"
+    joint_limit_reward_source: str = "runtime_soft_limits_v1"
+    reward_telemetry_version: str = "raw_weighted_means_v1"
+    # Sampling a bias is not the same as applying an encoder/actuator bias.
+    # Its physical semantics are not specified by the paper, so leave this
+    # unsupported randomization explicitly disabled rather than claiming it.
+    joint_zero_bias_mode: str = "disabled_unimplemented"
 
     # episode recording for hindsight buffers
     record_max_steps: int = 500
@@ -392,6 +403,7 @@ class AcpEnv(DirectRLEnv):
         self.contact_duration = torch.zeros(self.num_envs, 9, device=self.device)
         self.contact_body_vel = torch.zeros(self.num_envs, 9, 3, device=self.device)
         self.prev_contact_body_vel = torch.zeros(self.num_envs, 9, 3, device=self.device)
+        self._contact_velocity_history_valid = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
 
         # episode recording (CPU staging)
         self.ep_record = (
@@ -649,12 +661,45 @@ class AcpEnv(DirectRLEnv):
         return pts
 
     def _tracker_scan(self) -> torch.Tensor:
-        pts = self._scan_points_body_yaw()
+        mode = getattr(self.cfg, "tracker_scan_noise_mode", "legacy_mixed_noise")
+        if mode not in ("independent_uniform_v1", "legacy_mixed_noise"):
+            raise ValueError(f"Unknown tracker_scan_noise_mode: {mode}")
+        pts = self._scan_points_body_yaw(noisy=mode == "legacy_mixed_noise")
         x0, y0 = (self.L - self.TL) // 2, (self.W - self.TW) // 2
         idx = torch.arange(self.LW, device=self.device).view(self.L, self.W)[x0 : x0 + self.TL, y0 : y0 + self.TW].flatten()
         z = pts[:, idx, 2] - self.robot.data.root_pos_w[:, 2:3]
-        z = z + (torch.rand(self.num_envs, 1, device=self.device) * 2 - 1) * self.cfg.tracker_scan_noise
+        noise_shape = z.shape if mode == "independent_uniform_v1" else (self.num_envs, 1)
+        z = z + (torch.rand(noise_shape, device=self.device) * 2 - 1) * self.cfg.tracker_scan_noise
         return z
+
+    def _sample_csi_initial_phase(self, env_ids: torch.Tensor) -> torch.Tensor:
+        mode = getattr(self.cfg, "csi_sampling_mode", "uniform_from_curriculum_phase")
+        curriculum_phase = self.csi_min_phase[env_ids].clamp(0.0, 0.99)
+        if mode == "curriculum_phase":
+            return curriculum_phase
+        if mode == "uniform_from_curriculum_phase":
+            return curriculum_phase + torch.rand(len(env_ids), device=self.device) * (0.99 - curriculum_phase)
+        raise ValueError(f"Unknown csi_sampling_mode: {mode}")
+
+    def _contact_acceleration(self) -> torch.Tensor:
+        """Difference successive physical velocities without crossing a reset.
+
+        The first post-reset reading establishes a baseline; reference-state
+        initialization can have nonzero velocity and must not incur a fictitious
+        acceleration from zero. Subsequent readings retain the paper's kernel.
+        """
+        mode = getattr(self.cfg, "contact_acc_reset_mode", "legacy_zero_velocity_reset")
+        if mode not in ("skip_first_valid_difference_v1", "legacy_zero_velocity_reset"):
+            raise ValueError(f"Unknown contact_acc_reset_mode: {mode}")
+        self.prev_contact_body_vel = self.contact_body_vel
+        self.contact_body_vel = self.robot.data.body_link_lin_vel_w[:, self.contact_link_idx]
+        acceleration = (self.contact_body_vel - self.prev_contact_body_vel).norm(dim=-1).sum(-1) / self.step_dt
+        if mode == "skip_first_valid_difference_v1":
+            if not hasattr(self, "_contact_velocity_history_valid"):
+                self._contact_velocity_history_valid = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+            acceleration = torch.where(self._contact_velocity_history_valid, acceleration, torch.zeros_like(acceleration))
+            self._contact_velocity_history_valid.fill_(True)
+        return acceleration.clamp(max=1e4)
 
     def get_planner_obs(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         points = self._scan_points_body_yaw()
@@ -1048,17 +1093,24 @@ class AcpEnv(DirectRLEnv):
         r_joint_torque = tau_applied.pow(2).sum(-1)
         r_torque_limits = (tau_computed - tau_applied).abs().sum(-1)
         q = self.robot.data.joint_pos[:, self.controlled_idx]
-        lo, hi = self.joint_limits[self.controlled_idx, 0], self.joint_limits[self.controlled_idx, 1]
+        limit_source = getattr(w, "joint_limit_reward_source", "legacy_spec_hard_limits")
+        if limit_source not in ("runtime_soft_limits_v1", "legacy_spec_hard_limits"):
+            raise ValueError(f"Unknown joint_limit_reward_source: {limit_source}")
+        soft_limits = getattr(self.robot.data, "soft_joint_pos_limits", None)
+        if limit_source == "runtime_soft_limits_v1" and soft_limits is not None:
+            # Isaac Lab exposes (E, J, 2), including its configured soft factor.
+            limits = soft_limits[:, self.controlled_idx]
+            lo, hi = limits[..., 0], limits[..., 1]
+        else:
+            # Historical tensor fixtures do not expose articulation properties.
+            lo, hi = self.joint_limits[self.controlled_idx, 0], self.joint_limits[self.controlled_idx, 1]
         r_dof_pos = ((lo - q).clamp(min=0) + (q - hi).clamp(min=0)).sum(-1).clamp(max=30.0)
         qd = self.robot.data.joint_vel[:, self.controlled_idx]
         r_dof_vel = (qd.abs() - 0.9 * self.vel_limits[self.controlled_idx]).clamp(min=0, max=1.0).sum(-1)
 
         # style
         self.contact_duration = torch.where(c_meas > 0, self.contact_duration + self.step_dt, 0.0)
-        self.prev_contact_body_vel = self.contact_body_vel
-        self.contact_body_vel = self.robot.data.body_link_lin_vel_w[:, self.contact_link_idx]
-        acc = (self.contact_body_vel - self.prev_contact_body_vel).norm(dim=-1).sum(-1) / self.step_dt
-        r_contact_acc = torch.minimum(torch.full((e,), 1e4, device=self.device), acc)
+        r_contact_acc = self._contact_acceleration()
         torso_quat = self.robot.data.body_quat_w[:, self.torso_body_idx]
         g_torso = quat_apply(
             torch.cat((torso_quat[:, :1], -torso_quat[:, 1:]), dim=-1),
@@ -1077,29 +1129,50 @@ class AcpEnv(DirectRLEnv):
         foot = (self.terrain_group_id == 0) | (self.terrain_group_id == 1)
         m_flat, m_stumble, m_slip, m_ang = dense.float(), dense.float(), foot.float(), dense.float()
 
-        total = (
-            w.w_track_base_pos * r_base_pos * is_ref
-            + w.w_track_base_vel * r_base_vel * is_ref
-            + w.w_track_joint_pos * r_jpos * is_ref
-            + w.w_track_joint_vel * r_jvel * is_ref
-            + w.w_track_contact_label * (1.0 - self.cfg.eta_rew) * r_contact_label * is_ref
-            + w.w_track_contact_pos_base * (1.0 - self.cfg.eta_rew) * r_contact_pos_base * is_ref
-            + w.w_track_contact_pos_global * (1.0 - self.cfg.eta_rew) * r_contact_pos_global * is_ref
-            + w.w_track_planned_contact * (self.cfg.eta_rew * is_ref + is_goal) * r_planned
-            + w.w_move2goal * r_move2goal * is_goal
-            + w.w_standatgoal * r_standatgoal * is_goal
-            - w.w_action_rate * r_action_rate
-            - w.w_action_rate_2nd * r_action_2nd
-            - w.w_joint_torque * r_joint_torque
-            - w.w_torque_limits * r_torque_limits
-            - w.w_dof_pos_limits * r_dof_pos
-            - w.w_dof_vel_limits * r_dof_vel
-            - w.w_contact_acc * r_contact_acc
-            - w.w_flat_orientation * m_flat * r_flat * is_goal
-            - w.w_stumbling * m_stumble * r_stumbling * is_goal
-            - w.w_slippage * m_slip * r_slippage * is_goal
-            - w.w_ang_vel_xy * m_ang * r_angvel_xy * is_goal
-        )
+        # Keep each paper term visible without moving tensors to the CPU in
+        # the simulation loop. Weighted values include dt and sum to reward.
+        terms = {
+            "track_base_pos": (r_base_pos, w.w_track_base_pos * is_ref),
+            "track_base_vel": (r_base_vel, w.w_track_base_vel * is_ref),
+            "track_joint_pos": (r_jpos, w.w_track_joint_pos * is_ref),
+            "track_joint_vel": (r_jvel, w.w_track_joint_vel * is_ref),
+            "track_contact_label": (r_contact_label, w.w_track_contact_label * (1.0 - w.eta_rew) * is_ref),
+            "track_contact_pos_base": (r_contact_pos_base, w.w_track_contact_pos_base * (1.0 - w.eta_rew) * is_ref),
+            "track_contact_pos_global": (r_contact_pos_global, w.w_track_contact_pos_global * (1.0 - w.eta_rew) * is_ref),
+            "track_planned_contact": (r_planned, w.w_track_planned_contact * (w.eta_rew * is_ref + is_goal)),
+            "move2goal": (r_move2goal, w.w_move2goal * is_goal),
+            "standatgoal": (r_standatgoal, w.w_standatgoal * is_goal),
+            "action_rate": (r_action_rate, -w.w_action_rate),
+            "action_rate_2nd": (r_action_2nd, -w.w_action_rate_2nd),
+            "joint_torque": (r_joint_torque, -w.w_joint_torque),
+            "torque_limits": (r_torque_limits, -w.w_torque_limits),
+            "dof_pos_limits": (r_dof_pos, -w.w_dof_pos_limits),
+            "dof_vel_limits": (r_dof_vel, -w.w_dof_vel_limits),
+            "contact_acc": (r_contact_acc, -w.w_contact_acc),
+            "flat_orientation": (r_flat, -w.w_flat_orientation * m_flat * is_goal),
+            "stumbling": (r_stumbling, -w.w_stumbling * m_stumble * is_goal),
+            "slippage": (r_slippage, -w.w_slippage * m_slip * is_goal),
+            "ang_vel_xy": (r_angvel_xy, -w.w_ang_vel_xy * m_ang * is_goal),
+        }
+        total = torch.zeros(e, device=self.device)
+        telemetry = {}
+        for name, (raw, weight) in terms.items():
+            weighted = raw * weight
+            total = total + weighted
+            telemetry[f"raw/{name}"] = raw.detach().mean()
+            telemetry[f"weighted/{name}"] = weighted.detach().mean() * self.step_dt
+        telemetry["diagnostic/contact_measured_rate"] = c_meas.detach().mean()
+        telemetry["diagnostic/contact_reference_rate"] = self.ref_contact_flags.detach().mean()
+        if hasattr(self, "held_idx") and self.held_idx.numel():
+            held_error = (self.robot.data.joint_pos[:, self.held_idx]
+                          - self.default_pose[self.held_idx]).detach().abs()
+            telemetry["diagnostic/held_joint_error_max_rad"] = held_error.max()
+        telemetry["diagnostic/contact_flag_agreement"] = (c_meas == self.ref_contact_flags).float().mean().detach()
+        if hasattr(self, "init_phase"):
+            ref_count = is_ref.sum().clamp(min=1.0)
+            telemetry["diagnostic/reference_initial_phase_mean"] = (self.init_phase.detach() * is_ref).sum() / ref_count
+            telemetry["diagnostic/reference_phase_zero_initialization_fraction"] = ((self.init_phase <= 1e-6).float() * is_ref).sum() / ref_count
+        self.extras["reward_terms"] = telemetry
         return total * self.step_dt
 
     # ------------------------------------------------------------------
@@ -1152,6 +1225,10 @@ class AcpEnv(DirectRLEnv):
             if self.cfg.evaluation_record_trajectory:
                 data = self.robot.data
                 self.extras["final_tracking"].update({
+                    "all_joint_pos": data.joint_pos.detach().clone(),
+                    "held_joint_position_error_rad": (
+                        data.joint_pos[:, self.held_idx] - self.default_pose[self.held_idx]
+                    ).detach().clone(),
                     "root_pos_w": data.root_pos_w.detach().clone(),
                     "ref_root_pos_w": ref["root_pos"].detach().clone(),
                     "root_quat_w": data.root_quat_w.detach().clone(),
@@ -1224,9 +1301,7 @@ class AcpEnv(DirectRLEnv):
             if self.cfg.replay or self.cfg.evaluation:
                 self.init_phase[ref_ids] = self.cfg.evaluation_start_phase if self.cfg.evaluation else 0.0
             elif self.cfg.stage == 1 and self.cfg.csi_enabled:
-                self.init_phase[ref_ids] = torch.rand(len(ref_ids), device=self.device) * (
-                    0.99 - self.csi_min_phase[ref_ids]
-                ) + self.csi_min_phase[ref_ids]
+                self.init_phase[ref_ids] = self._sample_csi_initial_phase(ref_ids)
             elif self.cfg.stage == 2:
                 self.init_phase[ref_ids] = torch.rand(len(ref_ids), device=self.device) * 0.98
             else:
@@ -1283,10 +1358,13 @@ class AcpEnv(DirectRLEnv):
         self.contact_duration[env_ids] = 0.0
         self.contact_body_vel[env_ids] = 0.0
         self.prev_contact_body_vel[env_ids] = 0.0
+        if hasattr(self, "_contact_velocity_history_valid"):
+            self._contact_velocity_history_valid[env_ids] = False
         self.action_delay[env_ids] = torch.randint(
             self.cfg.dr_delay[0], self.cfg.dr_delay[1] + 1, (len(env_ids),), device=self.device
         )
-        self.dr_scan_bias[env_ids] = (0.0 if self.cfg.evaluation else
+        self.dr_scan_bias[env_ids] = (0.0 if self.cfg.evaluation or
+                                    getattr(self.cfg, "training_profile", "acp_partial_dr") == "nominal_pretrain" else
                                     torch.randn(len(env_ids), self.LW, device=self.device) * 0.05)
 
         self._update_ref_contact_flags()

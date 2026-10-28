@@ -149,6 +149,12 @@ class TrackingTrajectory:
             if value.shape != (23,) or not np.isfinite(value).all() or (value <= 0).any():
                 raise ValueError("joint_effort_limit must contain 23 finite positive values")
             row["joint_effort_limit"] = value
+        for key in ("all_joint_pos", "held_joint_position_error_rad"):
+            if key in snapshot:
+                value = torch.as_tensor(snapshot[key]).detach()[env_id].cpu().numpy().copy()
+                if value.ndim != 1 or not np.isfinite(value).all():
+                    raise ValueError(f"{key}: expected finite named joint-axis data")
+                row[key] = value
         if self._rows and (row.keys() != self._rows[0].keys() or row["phase"] < self._rows[-1]["phase"]):
             raise ValueError("Diagnostic fields changed or reference phase decreased within an episode")
         self._rows.append(row)
@@ -176,7 +182,7 @@ class TrackingTrajectory:
                   "reference_end" if bool(last["reached_end"]) else
                   "episode_time_limit" if bool(last["time_out"]) else
                   "external_budget_or_interruption")
-        return dict(
+        result = dict(
             samples=len(self._rows), failure_reason=reason,
             measured_contact_definition="Environment force-history threshold; bound scenes use terrain-filtered sensors",
             torque_definition="Isaac implicit actuator estimated torques, not joint torque sensor measurements",
@@ -195,6 +201,9 @@ class TrackingTrajectory:
             endpoint_grace_active=bool(last["grace_active"]),
             termination_threshold_provenance="Local engineering safeguards, not claimed paper evaluation thresholds",
         )
+        if "held_joint_position_error_rad" in a and a["held_joint_position_error_rad"].shape[1]:
+            result["held_joint_position_error_max_rad"] = float(np.abs(a["held_joint_position_error_rad"]).max())
+        return result
 
     def write(self, path, *, metadata: dict):
         """Atomically publish a pickle-free NPZ and refuse existing artifacts."""

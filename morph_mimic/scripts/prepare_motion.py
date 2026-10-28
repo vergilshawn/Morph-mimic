@@ -1,7 +1,7 @@
 """Extract a reference-only motion window without altering source assets.
 
     python -m morph_mimic.scripts.prepare_motion --robot g1 --clip walk1_subject1 \
-        --start-s 0 --duration-s 8 --output-dir datasets/g1_smoke
+        --start-s 0 --duration-s 8 --output-dir datasets/g1_walk_candidate
 
 An 8 s window at 50 Hz contains 401 samples, including both endpoints.
 This operation does not generate force contacts or validate physical tracking.

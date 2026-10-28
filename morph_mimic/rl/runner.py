@@ -117,6 +117,8 @@ class Runner:
             t_start = time.time()
             storage.step = 0
             n_episodes = 0
+            reward_telemetry = {}
+            reward_telemetry_steps = 0
 
             self._set_annealing()
             for t in range(cfg.num_steps):
@@ -135,6 +137,15 @@ class Runner:
                     vfs = critic_fs(vfs_in)
                 action, log_prob = ppo.act(obs)
                 obs2, rew, terminated, truncated, _info = env.step(action)
+                terms = _info.get("reward_terms", {})
+                if terms:
+                    for name, value in terms.items():
+                        value = torch.as_tensor(value, device=self.device).detach()
+                        if name == "diagnostic/held_joint_error_max_rad":
+                            reward_telemetry[name] = torch.maximum(reward_telemetry.get(name, value), value)
+                        else:
+                            reward_telemetry[name] = reward_telemetry.get(name, 0.0) + value
+                    reward_telemetry_steps += 1
                 dones = terminated | truncated
                 if not torch.isfinite(rew).all() or not torch.isfinite(obs2["policy"]).all():
                     raise FloatingPointError("Nonfinite environment observation or reward")
@@ -196,6 +207,14 @@ class Runner:
                     self.writer.add_scalar(f"train/{k}", v, self.iteration)
                 for k, v in planner_stats.items():
                     self.writer.add_scalar(f"planner/{k}", v, self.iteration)
+                if reward_telemetry_steps:
+                    keys = list(reward_telemetry)
+                    values = torch.stack([
+                        reward_telemetry[key] if key == "diagnostic/held_joint_error_max_rad"
+                        else reward_telemetry[key] / reward_telemetry_steps for key in keys
+                    ])
+                    for name, value in zip(keys, values.cpu().tolist()):
+                        self.writer.add_scalar(f"reward/{name}", value, self.iteration)
                 self.writer.add_scalar("planner/eta_obs", env.cfg.eta_obs, self.iteration)
                 self.writer.add_scalar("planner/eta_rew", env.cfg.eta_rew, self.iteration)
                 self.writer.add_scalar("buffer/ref_steps", buffers["ref"].size_steps(), self.iteration)
@@ -212,6 +231,13 @@ class Runner:
                                  for ep in reference_episodes]
                     self.writer.add_scalar("episode/reference_completion_rate", float(np.mean(successes)), self.iteration)
                     self.writer.add_scalar("episode/reference_start_phase", float(np.mean([ep["init_phase"] for ep in reference_episodes])), self.iteration)
+                    phase_zero = [ep for ep in reference_episodes if ep["init_phase"] <= 1e-6]
+                    self.writer.add_scalar("episode/phase_zero_sample_fraction", len(phase_zero) / len(reference_episodes), self.iteration)
+                    if phase_zero:
+                        successes_zero = [ep["end_phase"] >= .99 and not ep.get("terminated", True)
+                                          and ep.get("root_position_error_m", float("inf")) <= getattr(env.cfg, "csi_success_root_error_m", .3)
+                                          for ep in phase_zero]
+                        self.writer.add_scalar("episode/phase_zero_completion_rate", float(np.mean(successes_zero)), self.iteration)
                     errors = [ep["root_position_error_m"] for ep in reference_episodes if "root_position_error_m" in ep]
                     if errors:
                         self.writer.add_scalar("episode/terminal_root_error_m", float(np.mean(errors)), self.iteration)

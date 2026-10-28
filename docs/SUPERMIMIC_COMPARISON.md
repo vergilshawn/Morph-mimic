@@ -1,5 +1,7 @@
 # supermimic 工程补强与 ACP 适用修改
 
+本文记录早期工程对照与当时的测试计数；当前训练状态、统一检查入口和有效制品以 [复现计划](REPRODUCTION_PLAN.md) 与 [箱攀管线](BOX_CLIMB_PIPELINE.md) 为准。
+
 supermimic 中最值得用于本项目的补强，是机器人与数据约定、参考运动学验证、独立物理评估和训练记录。本轮已经落实了会改变训练目标或数值可靠性的明确修复；全帧可行性审计、任务数据配对和泛化评估仍需继续建设。
 
 检查对象为本地 `/media/user/DATA/supermimic` 的 mojia 分支，包括其 G1 对照审计。本轮没有修改该项目的文件或分支。其 G1 成绩、Mojia 参考限制和 CPU/GPU 接触差异不能直接作为 ACP 结果。
@@ -31,7 +33,7 @@ supermimic 中最值得用于本项目的补强，是机器人与数据约定、
 - 按名称映射全部物理关节与身体，重算 FK、身体原点世界线速度和世界角速度。
 - 保留完整物理状态、源/模型/依赖/配置 hash，输出到新目录，拒绝覆盖和继承旧接触标签。
 
-已生成 `datasets/g1_23dof_smoke/walk1_subject1.npz`，401 帧、8 秒，来源见 `.projection.json`。原始资产和 `datasets/g1_smoke` 保留不变。后续标注、训练与评估应使用新目录。
+早期 8 秒走路投影试样已在 2026-10-28 清理，原始迁移动作保留不变。当前有效箱攀输入为 `datasets/g1_box_climb_seed_v2`，回归中的投影检查改用临时生成的数据，不再依赖废弃试样。
 
 MuJoCo 的 free-root 角速度使用 root-local 轴，`mj_objectVelocity(BODY)` 的线速度参考点是 COM；投影工具显式处理了局部/世界转换及 COM 到 body-origin 的平移。测试还用独立积分后的位姿差分验证身体线角速度，没有仅用同一个 FK 输出互相比对。
 
@@ -70,6 +72,6 @@ RunningNorm、训练集配比、显式 PD 后端和虚拟手尖都可以成为�
 
 ## 本轮验证与源码位置
 
-在 `env_isaaclab_2` 中，完整测试为 **64 passed、2 skipped、87 subtests passed**。两个跳过项是该环境未安装 MuJoCo 的投影测试；使用默认 Python 的 `python -m unittest tests.test_reference_projection tests.test_contact_labels -q`，相关 **12 项测试全部通过**，包括独立 FK/速度数值验证。CLI 帮助和编译检查通过。真实 Isaac Sim/GPU 训练尚未验收。
+当时在 `env_isaaclab_2` 中，完整测试为 **64 passed、2 skipped、87 subtests passed**。两个跳过项是该环境未安装 MuJoCo 的投影测试；当时额外使用有 MuJoCo 的 Python 验证了投影及标签的 12 项检查，包括独立 FK/速度数值验证。CLI 帮助和编译检查通过；该阶段尚未验收真实 Isaac Sim/GPU 训练。测试文件现已合并，当前入口与分组见 [测试说明](../tests/README.md)。
 
 主要来源为 supermimic 的 `docs/ROBOT_CONTRACT.md`、`docs/DATA.md`、`robot_control/dataset_audit.py`、`runtime/physics.py`、`runtime/collector.py`、`runtime/train.py`、`runtime/evaluation_worker.py`、`runtime/evaluate.py`、`tests/test_robot_contract.py` 和 `tests/test_guards.py`。这些文件用于比较工程约定；supermimic 的既有成绩不属于本工程的验证结果。

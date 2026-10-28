@@ -1,10 +1,10 @@
 # ACP 动作与地形数据来源及接入顺序
 
-截至 2026 年 10 月 27 日，已核实 ACP 的来源表，以及 PHP、OmniRetarget、VideoMimic 等公开资源的实际数据入口。本机另有 BONES-SEED 的箱攀、楼梯、跨越和梯子动作。当前差距应细分为动作筛选、格式与模型适配、场景配对、接触重标和物理验收，不能再笼统理解为这些技能没有数据。
+数据来源于 2026 年 10 月 27 日核实，本地保留范围于 2026 年 10 月 28 日清理后更新。已核实 ACP 的来源表，以及 PHP、OmniRetarget、VideoMimic 等公开资源的实际数据入口。本机另有 BONES-SEED 的箱攀、楼梯、跨越和梯子动作。当前差距应细分为动作筛选、格式与模型适配、场景配对、接触重标和物理验收，不能再笼统理解为这些技能没有数据。
 
-已实际下载 **OmniRetarget 的两个交互子集及模型、PHP 的五个训练包与原子技能库、VideoMimic captures 包**，保存在 `datasets/external/`。原始下载约 643 MB，连同解压数据约 2 GB；下载范围、配对检查和校验依据见 [本地下载清单](../datasets/external/README.md)。大部分仍为源格式数据，尚未批量导入或通过物理验收。机器可读来源表见 [resource_registry.json](../references/data_sources/resource_registry.json)，四个本地候选的文件位置、帧数与 hash 见 [local_motion_candidates.json](../references/data_sources/local_motion_candidates.json)。
+已实际下载 **OmniRetarget 的两个交互子集及模型、PHP 的五个训练包与原子技能库、VideoMimic captures 包**，源格式数据、模型、许可和下载报告保存在 `datasets/external/`。历史下载总量约 643 MB；清理后保留的外部文件约 1.43 GB。9 个 ZIP/TAR.GZ 归档中的 **1219 个有效文件**已逐文件与解压副本核对 SHA256，随后删除重复归档，释放约 554 MB；macOS 元数据不作为动作或场景数据保留。各目录原有 `download_report.json` 和统一 `download_inventory.json` 是历史下载凭据，其下载字节数不表示当前磁盘占用。清理详情见 [cleanup.json](../runs/_reports/cleanup.json)，逐文件核验见 [data_archive_verification.json](../runs/_reports/data_archive_verification.json)，下载范围和配对检查见 [本地数据清单](../datasets/external/README.md)。大部分仍未批量导入或通过物理验收。机器可读来源表见 [resource_registry.json](../references/data_sources/resource_registry.json)，四个本地候选的文件位置、帧数与 hash 见 [local_motion_candidates.json](../references/data_sources/local_motion_candidates.json)。
 
-其中 OmniRetarget 的 `climb_03` 已完成一个 0–10 秒派生样例，位于 `datasets/g1_box_climb_seed_v2`：场景、自碰及接触保留检查通过，已用于真实五轮 PPO 验证。其余源数据尚未批量导入。物理 PD 回放及短训练策略的完整跟踪未通过，不能据此报告箱攀成功。详见 [单条箱攀管线](BOX_CLIMB_PIPELINE.md)。
+其中 OmniRetarget 的 `climb_03` 已完成一个 0–10 秒派生样例，位于 `datasets/g1_box_climb_seed_v2`：场景、自碰及接触保留检查通过，已接入训练，完整箱攀物理验收尚未通过。另保留 `g1_box_climb_omniretarget_baseline_inputs_v1` 的原始 29 轴对照输入，以及 `g1_standing_reference_v1` 的工程静态站立参考。旧格式试样、被拒绝的重定向候选和平地调试裁剪已删除；有效诊断转存于 `runs/_reports`，测试使用临时生成的夹具。其余源数据尚未批量导入。详见 [单条箱攀管线](BOX_CLIMB_PIPELINE.md)。
 
 ## ACP 原论文实际使用的数据
 
@@ -79,4 +79,4 @@ Mixamo 是 ACP 的真实来源，但[Adobe 社区 FAQ](https://community.adobe.c
 4. 重采样到 50 Hz，重算 FK/速度，在匹配场景中检查环境接触与自碰，提取参考几何标签供 Stage 1 起步；另做物理 replay 或 tracker 回录，完整验收后才能把实际受力接触作为有效 hindsight 标签。两种标签分别记录来源，不能相互冒充。
 5. 每种技能稳定后再增强地形，并按源动作及地形 seed 分组评估。继续采用 ACP 的三阶段方法，不需要为使用 PHP 数据而切换成 PHP 的整套训练算法。
 
-当前已增加 **reference clip 到 scene 的绑定与导入**，首版只允许一个动作、一个环境、Stage 1/2。`label_reference_geometry` 检查真实碰撞几何并写参考标签；`label_contacts` 检测到 sidecar 后导入匹配场景，无 sidecar 时保留平地基线。把箱攀或爬梯文件单独丢进 motions 目录而省略场景，仍会破坏交互意义。
+当前已增加 **reference clip 到 scene 的绑定与导入**，单条参考场景的每环境独立副本已用于并行训练。`label_reference_geometry` 检查真实碰撞几何并写参考标签；`label_contacts` 检测到 sidecar 后导入匹配场景，无 sidecar 时保留平地基线。把箱攀或爬梯文件单独丢进 motions 目录而省略场景，仍会破坏交互意义。

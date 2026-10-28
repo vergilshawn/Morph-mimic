@@ -16,10 +16,11 @@ import time
 from zoneinfo import ZoneInfo
 
 
-TERMINAL_STATES = {"validated", "budget_exhausted", "failed"}
+TERMINAL_STATES = {"validated", "budget_exhausted", "failed", "superseded"}
 PHASES = {
     "setup": "准备中", "waiting_for_existing_training": "首段训练中",
     "train": "训练中", "evaluate": "整段评估中",
+    "contact_metrics": "接触指标统计中",
     "checkpoint_metadata": "读取检查点", "finished": "已停止", "stopped": "已停止",
 }
 
@@ -62,6 +63,10 @@ def snapshot(run_dir: Path) -> dict:
         last_evaluation=evaluations[-1] if evaluations else None,
         training_log=str(training_log), active_log=str(active_log),
         error=status.get("error"), criteria=status.get("criteria", {}),
+        stop_reason=status.get("stop_reason"), superseded_by=status.get("superseded_by"),
+        training_profile=status.get("training_profile"),
+        training_profile_description=status.get("training_profile_description"),
+        scope=status.get("scope"),
     )
 
 
@@ -75,21 +80,36 @@ def render(item: dict) -> list[str]:
         f"连续达标={item['consecutive_successes']}/{item['required_successes']} | "
         f"已完成整段评估={item['evaluation_count']}",
     ]
+    if item.get("scope"):
+        lines.append(f"实验范围：{item['scope']}")
     if state == "validated":
         lines.append("STOP validated：连续多个不同检查点通过完整起点评估，训练已自动停止。")
     elif state == "budget_exhausted":
         lines.append("STOP budget_exhausted：达到训练上限，验收尚未通过，训练已自动停止。")
     elif state == "failed":
         lines.append(f"STOP failed：自动任务发生异常并停止。原因：{item.get('error')}")
+    elif state == "superseded":
+        lines.append("STOP superseded：旧实验已按计划人为停止，由新实验替换；这不表示验收通过。")
+        if item.get("stop_reason"):
+            lines.append(f"替换原因：{item['stop_reason']}")
+        if item.get("superseded_by"):
+            lines.append(f"后续实验：{item['superseded_by']}")
     else:
         lines.append(f"当前子进程日志：{item['active_log']}")
     evaluation = item["last_evaluation"]
     if evaluation:
-        verdict = "通过" if evaluation["passed"] else "未通过，继续训练"
+        verdict = "通过" if evaluation["passed"] else (
+            "未通过" if state in TERMINAL_STATES else "未通过，继续训练")
         lines.append(f"最近完整评估：第 {evaluation['iteration']} 轮，{verdict}；"
                      f"连续达标 {evaluation['consecutive_successes']}/{item['required_successes']}")
         if evaluation.get("reasons"):
             lines.append("未通过项：" + "; ".join(evaluation["reasons"]))
+        if evaluation.get("contact_report"):
+            coverage = evaluation.get("contact_coverage", {}).get("reference_duration_coverage_fraction")
+            coverage_text = f"，参考时段覆盖={coverage:.1%}" if isinstance(coverage, (int, float)) else ""
+            lines.append(f"接触诊断：{evaluation['contact_report']}{coverage_text}；接触 F1 暂不参与验收。")
+    if item.get("training_profile") == "nominal_pretrain":
+        lines.append("训练配置：nominal_pretrain，使用名义动力学/无观测噪声预训练，尚非完整 ACP 随机化复现。")
     if item["last_training_line"]:
         lines.append(item["last_training_line"])
     return lines

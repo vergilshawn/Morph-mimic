@@ -39,6 +39,8 @@ def _arguments():
     parser.add_argument("--clips", nargs="+", help="selected clips; default is all clips in motion-dir")
     parser.add_argument("--planner", choices=("acp", "mlp"), default="acp")
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--held-joint-mode", choices=("nominal_pd", "hard_limits_at_nominal"),
+                        default="hard_limits_at_nominal")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--max-steps", type=int,
                         help="optional per-clip budget; short budgets are reported as incomplete")
@@ -134,6 +136,8 @@ def _evaluate_clip(args, checkpoint, metadata, actor, planner, app):
     env, _ = build_env(
         args.stage, args.robot, 1, ref_env_ratio=1.0, device=args.device,
         motion_dir=str(args.motion_dir), clips=[metadata["name"]],
+        training_profile=checkpoint.get("contract", {}).get("training", {}).get("training_profile", "acp_partial_dr"),
+        held_joint_mode=getattr(args, "held_joint_mode", "hard_limits_at_nominal"),
         evaluation=True, replay=False, seed=args.seed, csi_enabled=False,
         evaluation_start_phase=start_phase,
         evaluation_record_trajectory=getattr(args, "trajectory", None) is not None,
@@ -195,6 +199,7 @@ def _evaluate_clip(args, checkpoint, metadata, actor, planner, app):
             full_reference_control_steps=full_steps,
             start_phase=start_phase, episode_reward=total_reward,
             contract_verified=contract_verified,
+            held_joint_mode=getattr(env.cfg, "held_joint_mode", "nominal_pd") if hasattr(env, "cfg") else "unknown",
             body_names=list(env.contact_link_names),
             **reference_outcome(terminated=terminated, truncated=truncated,
                                 reached_end=reached_end, phase=phase, interrupted=interrupted,
@@ -210,6 +215,8 @@ def _evaluate_clip(args, checkpoint, metadata, actor, planner, app):
                 checkpoint_sha256=hashlib.sha256(args.resume.read_bytes()).hexdigest(),
                 source_sha256=metadata["source_sha256"], control_dt_s=spec.control_dt,
                 joint_names=list(spec.controlled_joint_names),
+                all_joint_names=list(env.robot.data.joint_names),
+                held_joint_names=[env.robot.data.joint_names[i] for i in env.held_idx.tolist()],
                 contact_body_names=list(env.contact_link_names),
                 quaternion_convention="world_from_link_wxyz", positions_frame="world",
                 sampling="Post-physics control endpoints before any automatic reset; initial reset state excluded",

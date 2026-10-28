@@ -1,10 +1,10 @@
 """Diagnose geometric reference contacts; write labels only after quality gates.
 
     python -m morph_mimic.scripts.label_reference_geometry --robot g1 \
-        --motion datasets/g1_box_climb_smoke/climb_18_z_scale_1.0.npz \
-        --scene datasets/g1_box_climb_smoke/climb_18_z_scale_1.0.scene.json \
-        --compare-raw datasets/g1_box_climb_smoke/raw_reference/climb_18_z_scale_1.0.npz \
-        --report datasets/g1_box_climb_smoke/diagnostics/climb_18_geometry.json
+        --motion datasets/g1_box_climb_seed_v2/climb_03_z_scale_1.0_scene_fit_0000_0501.npz \
+        --scene datasets/g1_box_climb_seed_v2/climb_03_z_scale_1.0_scene_fit_0000_0501.scene.json \
+        --compare-raw datasets/g1_box_climb_seed_v2/raw_reference/climb_03_z_scale_1.0_scene_fit_0000_0501.npz \
+        --report datasets/g1_box_climb_seed_v2/diagnostics/climb_18_geometry.json
 
 Default execution produces diagnostics, never training labels. --write-labels
 requests a new *_contacts.npz only if all geometric gates pass. Failure still

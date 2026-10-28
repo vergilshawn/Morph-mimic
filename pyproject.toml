@@ -12,6 +12,7 @@ dependencies = ["numpy", "torch", "tensorboard", "trimesh"]
 [project.optional-dependencies]
 test = ["pytest", "pytest-subtests"]
 reference = ["mujoco>=3.3", "scipy"]
+visualization = ["mujoco>=3.3", "Pillow", "PyOpenGL", "imageio-ffmpeg"]
 
 [tool.setuptools.packages.find]
 include = ["morph_mimic*"]

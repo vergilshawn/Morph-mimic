@@ -1,7 +1,7 @@
 """Convert one OmniRetarget robot-terrain clip and bind its original scene.
 
     python -m morph_mimic.scripts.import_omniretarget \
-        --clip climb_18_z_scale_1.0 --output-dir datasets/g1_box_climb_smoke
+        --clip climb_18_z_scale_1.0 --output-dir datasets/g1_box_climb_imported
 
 The source uses Drake's WXYZ + XYZ free-root layout, followed by the scalar
 joints in its G1 URDF declaration order. This importer explicitly names those

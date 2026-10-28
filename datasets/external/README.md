@@ -1,14 +1,16 @@
 # 已下载的公开动作与场景数据
 
-下载日期：2026-10-27。目录为 `/media/user/DATA/Morph_mimic/datasets/external`。以下三个来源已真实下载、解压并检查；仍保留源格式，没有启动训练或执行下载的上游程序。
+下载日期：2026-10-27；保留范围更新：2026-10-28。目录为 `/media/user/DATA/Morph_mimic/datasets/external`。以下三个来源已真实下载、解压并检查，保留源格式文件、模型、许可和来源报告。OmniRetarget 的一条箱攀动作已生成派生参考并用于本项目训练，其余数据尚未批量导入。
 
-| 本地目录 | 已下载内容 | 下载体积（十进制） | 完整性依据 |
+| 本地目录 | 已下载内容 | 历史下载体积（十进制） | 完整性依据 |
 | --- | --- | ---: | --- |
 | [omniretarget](omniretarget/LOCAL_README.md) | robot-terrain 145 条、robot-object-terrain 148 条，以及配套机器人、地形和椅子模型 | 142.5 MB | 333 个上游文件全部通过 Hugging Face LFS SHA-256 或 Git blob SHA-1 校验；ZIP CRC 通过 |
 | [php_parkour](php_parkour/download_report.json) | 296 对动作/地形，以及含 hurdle、vault 等的 19 个原子技能数据库 | 346.6 MB | 6 个归档及 680 个解压文件均通过官方 manifest 的大小和 SHA-256 校验 |
 | [videomimic](videomimic/download_report.json) | 123 对 G1 H5 动作与 OBJ 场景，其中 4 条在官方配置中标为楼梯 | 153.8 MB | 下载大小与远端一致；ZIP 全部成员 CRC 通过；已记录本地 SHA-256，上游未提供预期哈希 |
 
-原始下载共 **643,002,294 bytes**，连同解压数据约 **1.98 GB**，不含少量报告、脚本和文件系统开销。共有 712 条源轨迹，含生成或增强变体，不能当作 712 条独立真人采集动作。逐来源详细报告保存于各目录的 `download_report.json`；统一入口为 [download_inventory.json](download_inventory.json)。
+原始下载共 **643,002,294 bytes**；重复归档清理后，当前保留外部文件约 **1.43 GB**。共有 712 条源轨迹，含生成或增强变体，不能当作 712 条独立真人采集动作。逐来源的 `download_report.json` 与 [download_inventory.json](download_inventory.json) 保留为历史下载凭据，下载体积与当时的压缩/解压统计不表示当前占用。
+
+2026-10-28 清理前，已将 **9 个归档中的 1219 个有效文件**与本地解压副本逐一核对大小和 SHA256；有效文件全部一致，ZIP 读取同时校验 CRC。随后删除 OmniRetarget 的两个 ZIP、PHP 的六个 TAR.GZ 和 VideoMimic 的 captures ZIP，共 **553,778,086 bytes**。已解压的动作、场景和模型完整保留，macOS 元数据排除在有效文件之外。逐文件结果见 [data_archive_verification.json](../../runs/_reports/data_archive_verification.json)，删除列表和证据迁移路径见 [cleanup.json](../../runs/_reports/cleanup.json)。报告中记录的归档路径与哈希用于说明当时下载的对象，不表示归档仍存在。
 
 ## 数据实际包含什么
 
@@ -20,9 +22,9 @@
 
 1. 为每条参考显式绑定场景、坐标变换、时间约定和源动作分组。未确定的映射先排除，不按相似名字猜测场景。
 2. 按名称映射机器人关节、统一根位姿与 FPS。OmniRetarget 根状态为 `[qw,qx,qy,qz,x,y,z]`；PHP 为 `[x,y,z,qw,qx,qy,qz]`。G1 的 29 关节源数据需要适配本项目 23 控制关节并重算 FK，保持手脚在对应障碍表面的接触；mojia 需要另外重定向。
-3. 在对应三维场景中回放并验收，生成 ACP 九部位接触标签。当前平地 `label_contacts` 不能直接处理这些障碍数据。PHP 最长片段 26.52 秒，另需处理当前 15 秒回合上限。
+3. 在对应三维场景中回放并验收，生成 ACP 九部位接触标签。`label_reference_geometry` 生成参考几何标签；`label_contacts` 应通过 scene sidecar 加载对应障碍场景，物理回录验收成功后才能把真实受力作为有效训练标签。PHP 最长片段 26.52 秒，另需处理当前 15 秒回合上限。
 
-这些数据尚未完成本项目的训练导入或物理可行性验证，不能直接把整个 `external` 目录传给 `--motion_dir`。目前没有确认到 ACP 作者最终精选训练库的完整下载包；这里包含其箱攀来源及其他论文的补充数据。
+除已生成 `datasets/g1_box_climb_seed_v2` 的单条箱攀参考外，这些数据尚未完成本项目的训练导入；完整箱攀物理验收也尚未通过，不能直接把整个 `external` 目录传给 `--motion_dir`。目前没有确认到 ACP 作者最终精选训练库的完整下载包；这里包含其箱攀来源及其他论文的补充数据。
 
 ## 版本、许可与保留范围
 

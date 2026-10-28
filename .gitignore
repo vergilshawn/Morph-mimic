@@ -48,6 +48,9 @@ events.out.tfevents.*
 !/datasets/g1_box_climb_seed_v2/
 /datasets/g1_box_climb_seed_v2/*
 !/datasets/g1_box_climb_seed_v2/README.md
+!/datasets/g1_box_climb_contact_v3/
+/datasets/g1_box_climb_contact_v3/*
+!/datasets/g1_box_climb_contact_v3/README.md
 
 # Local copies of papers and downloaded source inspection snapshots.
 /references/acp/

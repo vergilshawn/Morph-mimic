@@ -26,6 +26,8 @@ def build_env(
     require_contacts: bool = True,
     motion_dir: str | None = None,
     clips: list[str] | None = None,
+    training_profile: str = "acp_partial_dr",
+    held_joint_mode: str = "hard_limits_at_nominal",
     **env_kwargs,
 ):
     from morph_mimic.cfg.configs import stage1_env_cfg, stage2_env_cfg, stage3_env_cfg
@@ -43,6 +45,10 @@ def build_env(
     cfg.replay = replay
     for k, v in env_kwargs.items():
         setattr(cfg, k, v)
+    from morph_mimic.utils.training_profile import configure_training_profile
+
+    configure_training_profile(cfg, training_profile)
+    cfg.held_joint_mode = held_joint_mode
     if stage >= 2 and not replay:
         cfg.record_max_steps = max(cfg.record_max_steps, math.ceil(cfg.episode_length_s / spec.control_dt) + 1)
     directory = Path(motion_dir) if motion_dir is not None else Path(spec.motion_dir)
@@ -70,6 +76,12 @@ def build_env(
                 "otherwise CSI cannot finish clips and stage 2 cannot admit successful rollouts."
             )
     env = AcpEnv(cfg, spec, motion)
+    from morph_mimic.utils.held_joints import apply_held_joint_mode
+
+    if spec.held_joint_names:
+        apply_held_joint_mode(env)
+    else:
+        cfg.held_joint_mode = "no_held_joints"
     return env, spec
 
 
@@ -114,6 +126,10 @@ def add_common_args(parser: argparse.ArgumentParser):
     parser.add_argument("--motion_dir", type=str, default=None)
     parser.add_argument("--clips", nargs="+", default=None)
     parser.add_argument("--flat_reference", action="store_true", help="use flat terrain only for stage 1/2 baseline validation")
+    parser.add_argument("--training-profile", choices=("acp_partial_dr", "nominal_pretrain"),
+                        default="acp_partial_dr", help="nominal skill pretraining or the explicitly partial ACP randomization")
+    parser.add_argument("--held-joint-mode", choices=("nominal_pd", "hard_limits_at_nominal"),
+                        default="hard_limits_at_nominal")
 
 
 def configure_runner(args, stage: int):
@@ -184,6 +200,8 @@ def run_training(args, stage: int):
             seed=args.seed,
             flat_reference=args.flat_reference,
             motion_dir=args.motion_dir, clips=args.clips,
+            training_profile=getattr(args, "training_profile", "acp_partial_dr"),
+            held_joint_mode=getattr(args, "held_joint_mode", "hard_limits_at_nominal"),
             **({"terrain_types": ("flat",), "ref_terrain_types": ("flat",), "num_terrain_levels": 1}
                if args.flat_reference else {}),
         )

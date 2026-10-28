@@ -34,6 +34,14 @@ SOURCE_FILES = (
     "morph_mimic/utils/checkpoint.py", "morph_mimic/rl/runner.py",
     "morph_mimic/rl/ppo.py", "morph_mimic/rl/storage.py",
     "morph_mimic/scripts/common.py",
+    "morph_mimic/utils/held_joints.py", "morph_mimic/utils/robot_cfg.py",
+    "morph_mimic/utils/specs.py", "morph_mimic/cfg/configs.py",
+    "morph_mimic/networks/tracker.py",
+    "morph_mimic/scripts/evaluate_contact_trajectory.py",
+    "morph_mimic/utils/evaluation.py",
+    "morph_mimic/utils/training_profile.py", "morph_mimic/utils/transforms.py",
+    "morph_mimic/scripts/evaluate.py", "morph_mimic/launcher.py",
+    "morph_mimic/scripts/train_until_validated.py", "morph_mimic/scripts/train_stage1.py",
 )
 _METADATA_CODE = """import hashlib,json,sys,torch
 c=torch.load(sys.argv[1],map_location='cpu',weights_only=False)
@@ -89,6 +97,10 @@ def _arguments(argv=None):
     parser.add_argument("--python-executable", type=Path, required=True)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--training-profile", choices=("acp_partial_dr", "nominal_pretrain"),
+                        default="acp_partial_dr")
+    parser.add_argument("--held-joint-mode", choices=("nominal_pd", "hard_limits_at_nominal"),
+                        default="hard_limits_at_nominal")
     args = parser.parse_args(argv)
     for name in ("num_envs", "max_iterations", "chunk_iterations", "required_successes"):
         if getattr(args, name) < 1:
@@ -144,6 +156,12 @@ def acceptance(report):
             raise ValueError(f"Evaluation lacks a finite nonnegative {name}")
         if value > limit:
             failures.append(f"{name}={value:.8g} exceeds {limit}")
+    if motion.get("held_joint_mode") == "hard_limits_at_nominal":
+        error = motion.get("physical_diagnostics", {}).get("held_joint_position_error_max_rad")
+        if isinstance(error, bool) or not isinstance(error, (float, int)) or not math.isfinite(error) or error < 0:
+            raise ValueError("Held-joint constraints require finite pre-reset dynamic deviation diagnostics")
+        if error > .01:
+            failures.append(f"held_joint_position_error_max_rad={error:.8g} exceeds 0.01")
     return not failures, failures
 
 
@@ -179,10 +197,17 @@ class Supervisor:
             required_successes=args.required_successes, maximum_iterations=args.max_iterations,
             chunk_iterations=args.chunk_iterations, robot=args.robot, clips=args.clips,
             num_envs=args.num_envs, seed=args.seed, device=args.device,
+            training_profile=getattr(args, "training_profile", "acp_partial_dr"),
+            held_joint_mode=getattr(args, "held_joint_mode", "hard_limits_at_nominal"),
+            training_profile_description=(
+                "Nominal dynamics/observations pretraining; not the full ACP domain-randomized reproduction"
+                if getattr(args, "training_profile", "acp_partial_dr") == "nominal_pretrain" else
+                "ACP-aligned training with the project's implemented partial domain randomization"),
             motion_dir=str(args.motion_dir), run_dir=str(args.run_dir),
             wait_pid=args.wait_pid, criteria=CRITERIA,
             criteria_provenance="Local engineering acceptance thresholds, not paper-reported metrics",
             success_definition="Consecutive different checkpoints passing complete deterministic phase-zero reference evaluation",
+            contact_metrics_role="Diagnostic only; contact F1 does not modify the full phase-zero acceptance gates",
             evaluations=[], children=[], source_sha256={},
         )
         self._probe_id = 0
@@ -195,7 +220,11 @@ class Supervisor:
         if initialize:
             manifest = self.args.run_dir / "launch_manifest.json"
             expected = json.loads(manifest.read_text()).get("source_sha256", {}) if manifest.exists() else {}
-            self.status["source_sha256"] = expected or {name: _sha256(PROJECT_ROOT / name) for name in SOURCE_FILES}
+            # Keep every supplied launch hash, and freeze newly covered source
+            # files even when a compatible older manifest listed fewer files.
+            self.status["source_sha256"] = {
+                **{name: _sha256(PROJECT_ROOT / name) for name in SOURCE_FILES}, **expected,
+            }
         changed = [name for name, digest in self.status["source_sha256"].items()
                    if _sha256(PROJECT_ROOT / name) != digest]
         if changed:
@@ -279,6 +308,7 @@ class Supervisor:
             "--robot", self.args.robot, "--stage", "1", "--device", self.args.device,
             "--headless", "--seed", str(self.args.seed), "--resume", str(checkpoint),
             "--motion-dir", str(self.args.motion_dir), "--clips", *self.args.clips,
+            "--held-joint-mode", getattr(self.args, "held_joint_mode", "hard_limits_at_nominal"),
             "--start-phase", "0", "--out", str(report_path), "--trajectory", str(trajectory),
         ], f"evaluate_iter{iteration:06d}.log", phase="evaluate")
         report = json.loads(report_path.read_text())
@@ -286,6 +316,18 @@ class Supervisor:
             raise ValueError("Evaluation checkpoint hash or physical trajectory artifact is missing/mismatched")
         if report["motions"][0].get("clip") != self.args.clips[0]:
             raise ValueError("Evaluation selected a different reference clip")
+        contact_report_path = directory / f"iter{iteration:06d}_contacts.json"
+        self._child([
+            str(self.args.python_executable), "-m", "morph_mimic.scripts.evaluate_contact_trajectory",
+            "--trajectory", str(trajectory),
+            "--motion", str(self.args.motion_dir / f"{self.args.clips[0]}.npz"),
+            "--labels", str(self.args.motion_dir / f"{self.args.clips[0]}_contacts.npz"),
+            "--out", str(contact_report_path),
+        ], f"contacts_iter{iteration:06d}.log", phase="contact_metrics", cpu_only=True)
+        contact_report = json.loads(contact_report_path.read_text())
+        contact_coverage = contact_report["coverage"]
+        self.status.update(latest_contact_report=str(contact_report_path),
+                           latest_contact_coverage=contact_coverage)
         passed, reasons = acceptance(report)
         if any(item["checkpoint_sha256"] == digest for item in self.status["evaluations"]):
             raise ValueError("A checkpoint cannot count twice toward consecutive acceptance")
@@ -294,6 +336,8 @@ class Supervisor:
         self.status["evaluations"].append(dict(
             iteration=iteration, actual_total_steps=metadata["total_steps"], checkpoint=str(checkpoint),
             checkpoint_sha256=digest, report=str(report_path), trajectory=str(trajectory),
+            contact_report=str(contact_report_path), contact_coverage=contact_coverage,
+            contact_metrics=contact_report["micro_force_history_vs_reference"],
             passed=passed, reasons=reasons, consecutive_successes=count,
             metrics={name: report["motions"][0][name] for name in CRITERIA},
         ))
@@ -305,7 +349,9 @@ class Supervisor:
                    "--num_envs", str(self.args.num_envs), "--seed", str(self.args.seed),
                    "--motion_dir", str(self.args.motion_dir), "--clips", *self.args.clips,
                    "--max_iterations", str(target), "--save_interval", str(self.args.chunk_iterations),
-                   "--log_dir", str(self.args.run_dir)]
+                   "--log_dir", str(self.args.run_dir),
+                   "--training-profile", getattr(self.args, "training_profile", "acp_partial_dr"),
+                   "--held-joint-mode", getattr(self.args, "held_joint_mode", "hard_limits_at_nominal")]
         if checkpoint is not None:
             command += ["--resume", str(checkpoint), "--continue_run"]
         self.status["target_iteration"] = target

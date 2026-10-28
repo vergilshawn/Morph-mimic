@@ -218,7 +218,7 @@ def assess_candidates(samples, body_names, fps, category, thresholds):
 
 def diagnose_reference(motion_path, scene_path, robot="g1", thresholds=None, compare_raw=None):
     from morph_mimic.contacts.self_collision import sample_self_contacts
-    from morph_mimic.scripts.validate_scene_reference import build_model, _body_columns, _joint_indices
+    from morph_mimic.diagnostics.validate_scene_reference import build_model, _body_columns, _joint_indices
     from morph_mimic.utils.motion import validate_motion_arrays, validate_contact_labels, validate_contact_body_order
     from morph_mimic.utils.reference_scene import load_reference_scene
     from morph_mimic.utils.specs import PROJECT_ROOT, RobotSpec

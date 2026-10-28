@@ -1,26 +1,52 @@
 # Morph Mimic
 
-基于 Isaac Lab 的 ACP 论文复现工程，包含从 supermimic 迁移的 G1 和 mojia 资产。当前已完成资产核验、训练通路修复与小规模真实训练检查，尚未通过完整技能训练及论文实验验收。
+基于 Isaac Lab 的 ACP 复现工程，包含从 supermimic 迁移的 G1 和 mojia 资产。当前在解决单任务箱攀的控制、接触与稳定性，**完整 ACP 多技能复现尚未完成**。
 
-Git 仓库包含源码、测试、文档、机器人模型、mesh、控制配置和来源清单。大规模动作数据、下载归档、派生标签、模型缓存和 `runs/` 下的权重、日志与运行状态保留在本机，不随 Git 提交。新克隆需按 [数据指南](docs/DATA_SOURCES.md) 和 [箱攀管线](docs/BOX_CLIMB_PIPELINE.md) 准备数据；下文提到的 checkpoint 与训练状态路径是本机实验记录。第三方资产来源及现有许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+**当前正式训练为 `runs/g1_box_climb_contact_teacher_v3_1024`，仍在迭代。** 最多 15000 轮，每 500 轮完整评估，连续三个不同检查点满足全部门禁才成功停止。最终源码已通过 1024 环境、240 步带噪压力测试、5→6 轮严格保存恢复和完整评估链路；本机启动记录为 `runs/_reports/preflight/contact_surface_v3_readiness.json`。
 
-已实际接入一条 10 秒箱攀参考，完成场景约束重定向、九部位几何标签、本地 G1 的 Isaac 资产审计，以及 32/1024 个独立场景的 GPU 复制验收。数据位于 `datasets/g1_box_climb_seed_v2`。当前训练目录是 `runs/g1_box_climb_stage1_v3_1024`；使用 1024 环境，上限 20000 轮，每 1000 轮自动从起点评估整段动作，连续三个 checkpoint 达到工程验收门限后提前结束。完成状态以该目录的 `supervisor_status.json` 为准，尚未宣称箱攀技能成功。旧五轮权重仅保留作历史诊断，与修复后的接触输入坐标不兼容。命令、验收门限与证据见 [单条箱攀管线](docs/BOX_CLIMB_PIPELINE.md)。
+2026-10-28 已核对的正式评估中，**V3 第 3000 轮单次通过全部门禁**；第 3500 轮仍完成箱攀及箱顶保持，但足部参考姿态和三个保持端点的 CoM 支撑余量未过，连续计数由 1/3 重置。3000 轮成功候选权重保留，尚未完成连续三次验收；单次单动作通过不等于完整 ACP 复现。
 
-[复现状态、待办与执行顺序](docs/REPRODUCTION_PLAN.md)记录了验收标准、命令和已知差距；[与 supermimic 的工程补强对照](docs/SUPERMIMIC_COMPARISON.md)说明了本轮精度与验证改进；[资产审计结果](docs/asset_audit.json)保存了源文件一致性检查。
+V3 仍是 584 维特权参考教师，采用 `reference_q + 0.25 × residual` 与名义动力学。新参考保留原 501 帧，追加 50 帧本地 settle，形成 11 秒动作，再执行 1 秒真实物理保持，共 600 个控制步。新增全身 30 个刚体的真实 normal/friction、作用点与力臂矩，接触表面姿态/法向/stance slip 奖励，以及保持阶段的实际支撑凸包、CoM 与稳定门禁；运动中允许参考手、膝等多部位支撑。
 
-在项目根目录、已安装 Isaac Lab 的环境运行：
+从旧 v2 第 2000 轮**仅初始化 actor 权重**，critic、优化器、探索噪声与迭代进度重新开始。旧 v2 已在第 3000 轮后停止并标记 `superseded`：2000 轮通过旧门禁，2500/3000 轮失败，未达到连续三次验收；不能称 v2 已验证成功。其权重和评估仍保留。独立站立模型的成功也不代表箱攀成功。
+
+在项目根目录使用两个检查入口：
 
 ```bash
 conda activate env_isaaclab_2
-OMP_NUM_THREADS=1 python -m pytest -q tests
+python -m morph_mimic.scripts.check \
+  --motion-dir datasets/g1_box_climb_contact_v3 \
+  --clip climb_03_z_scale_1.0_scene_fit_0000_0501_settle_v3
+python -m morph_mimic.scripts.inspect --help
 ```
 
-恢复完整本地数据后，可运行 `python -m morph_mimic.scripts.audit_assets --verify-hashes --deep` 检查迁移清单。仅克隆代码时，与未下载数据或可选仿真依赖有关的测试会明确跳过；完整资产审计仍需要清单中的本地数据。
+`check` 顺序执行基础回归 → 资产 → 动作/标签/场景契约，失败即停，默认不启动 GPU 或训练。`tests/` 已由 47 个模块合并为 7 个主题模块；默认 272 项必要检查，专项用 `--only regression --suite <组名>` 选择，组名包括 `reference`、`planner`、`auxiliary`、`diagnostics`、`physics`、`all`，可继续用 `--pytest-args` 筛选。详见 [测试分组与命令](tests/README.md)。`inspect` 汇总专项诊断、轨迹渲染和播放，用 `inspect 子命令 --help` 查看参数。
 
-已有 `datasets/g1_23dof_smoke/walk1_subject1.npz`，为原动作的 0–8 秒窗口，共 401 帧，已将 6 个保持关节设为 nominal 并重算全身体运动学。原始裁剪保留在 `datasets/g1_smoke`，不能直接作为 23 关节控制参考。此样例没有接触标签，也没有经过物理跟踪验收。可访问 NVIDIA GPU 后，先执行文档中的单动作回放与标注，再启动小规模 Stage 1。
+Git 仓库包含源码、测试和机器人模型资产；动作、标签、训练权重、评估轨迹与启动验收记录保留在本机。新克隆尚不能直接启动同一训练，数据重建与启动汇总入口的缺口见 [复现边界](docs/REPRODUCTION_PLAN.md#仓库范围与复现边界)。可先安装依赖并运行基础回归；缺失的可选后端或本机夹具会明确跳过：
 
-所有 Sim 入口先启动 SimulationApp，再导入 Isaac Lab 环境。建议使用 `python -m morph_mimic.scripts.<script>`；`--help` 无需启动 Sim。训练入口支持 `--motion_dir`、`--clips`、`--max_iterations`、`--save_interval`、`--resume` 和 `--continue_run`。
+```bash
+python -m pip install -e '.[test]'
+python -m morph_mimic.scripts.check --only regression --suite basic
+```
 
-确定性整段策略评估使用 `python -m morph_mimic.scripts.evaluate`，支持 Stage 1/2 绑定场景或无场景的平地参考跟踪，并可保存终止前的物理诊断轨迹。无场景的 G1 新参考可经 `project_reference` 做关节一致性投影；有场景的参考应使用场景约束重定向入口，保留场景和标签绑定。投影额外需要 MuJoCo，可安装可选依赖 `.[reference]`，也可使用本机已有 MuJoCo 的 Python 环境。
+查看训练进度：
 
-已下载 PHP、OmniRetarget 和 VideoMimic 的动作与场景数据，保存在 `datasets/external/`，具体数量、校验与格式差异见 [下载清单](datasets/external/README.md)。这些源数据尚需格式适配、场景绑定和接触标注。箱攀、楼梯、跨栏与梯子的来源及接入顺序见 [数据指南](docs/DATA_SOURCES.md)；本地 BONES-SEED 已有四类动作候选。
+```bash
+tail -n 30 -F runs/g1_box_climb_contact_teacher_v3_1024/progress.log
+```
+
+| 路径 | 用途 |
+| --- | --- |
+| `datasets/g1_box_climb_contact_v3/` | 新版 551 帧参考、几何接触标签、绑定场景及来源记录 |
+| `datasets/g1_box_climb_seed_v2/` | 保留的 10 秒训练参考；新参考前 501 帧的来源 |
+| `datasets/external/` | OmniRetarget、PHP、VideoMimic 独有源动作和地形 |
+| `runs/g1_box_climb_contact_teacher_v3_1024/` | 正在运行的新版教师 |
+| `runs/g1_box_climb_reference_teacher_v2_2048/` | 已停止的 v2 基线权重与评估 |
+| `runs/g1_standing_aux_v1_1024/` | 已验收站立模型与证据 |
+| `runs/_reports/` | 统一检查、预检、论文口径审计与历史证据 |
+
+源码、测试、机器人模型资产和小型数据说明随 Git 保存；动作、标签、训练权重、缓存与运行制品在本机保留。新增 settle 和稳定门禁是本地工程补充，不是作者原始数据；短预检通过也不能证明箱攀已学会。当前限制、原文指标与工程指标的区别见 [论文指标审计](docs/PAPER_METRIC_AUDIT.md)。
+
+详见 [箱攀管线与命令](docs/BOX_CLIMB_PIPELINE.md)、[复现路线](docs/REPRODUCTION_PLAN.md)、[新版数据说明](datasets/g1_box_climb_contact_v3/README.md)、[数据来源](docs/DATA_SOURCES.md) 和 [第三方许可](THIRD_PARTY_NOTICES.md)。训练中的输入与冻结源码不得原地改写。
+
+本机另有早期第 6 轮短流程视频 `runs/_reports/preflight/teacher_v3_preview/policy_vs_reference.mp4`（旧 v2 actor 初始化，2 倍慢放，无额外片尾定格）。该早期模型实际完成 600 个控制步，但左足姿态误差超标；它不代表后续正式训练的最新结果。

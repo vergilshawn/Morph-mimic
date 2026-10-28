@@ -2,7 +2,7 @@
 
     python -m morph_mimic.scripts.retarget_scene_reference \
         --clip climb_03_z_scale_1.0 --start-s 0 --duration-s 10 \
-        --output-dir datasets/g1_box_climb_retarget
+        --output-dir datasets/g1_box_climb_candidate
 
 This is a bounded engineering optimization, not the authors' retargeter.
 Every selected frame is retained. Small root corrections, 23 controlled joint
@@ -26,7 +26,7 @@ from morph_mimic.contacts.reference_geometry import GeometryThresholds, diagnose
 from morph_mimic.contacts.self_collision import effective_robot_geom_pairs, sample_self_contacts
 from morph_mimic.scripts.import_omniretarget import canonical_kinematics, convert_clip
 from morph_mimic.scripts.label_reference_geometry import _write_new
-from morph_mimic.scripts.validate_scene_reference import _body_columns, _joint_indices, build_model
+from morph_mimic.diagnostics.validate_scene_reference import _body_columns, _joint_indices, build_model
 from morph_mimic.utils.motion import validate_motion_arrays
 from morph_mimic.utils.reference_scene import load_reference_scene
 from morph_mimic.utils.specs import PROJECT_ROOT, RobotSpec
