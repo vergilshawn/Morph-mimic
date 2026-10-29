@@ -49,7 +49,7 @@ def parser():
     result.add_argument("--stage", type=int, choices=(1, 2, 3), default=1)
     result.add_argument("--checkpoint", type=Path,
                         help="check saved policy against its skill gates; failed skill exits 1; never train")
-    result.add_argument("--checkpoint-kind", choices=("acp", "standing", "teacher-v2", "teacher-v3"), default="acp")
+    result.add_argument("--checkpoint-kind", choices=("acp", "acp-student", "standing", "teacher-v2", "teacher-v3"), default="acp")
     result.add_argument("--_stage", choices=(*CPU_STAGES[1:], "self-collision", "gpu"), help=argparse.SUPPRESS)
     result.add_argument("--_result", type=Path, help=argparse.SUPPRESS)
     return result
@@ -203,7 +203,7 @@ def checkpoint_command(args, directory):
         return [sys.executable, "-m", "morph_mimic.scripts.evaluate", "--robot", args.robot,
                 "--stage", str(args.stage), *common]
     module = {"standing": "train_standing_baseline", "teacher-v2": "train_reference_teacher_v2",
-              "teacher-v3": "train_reference_teacher_v3"}[args.checkpoint_kind]
+              "teacher-v3": "train_reference_teacher_v3", "acp-student": "train_acp_student"}[args.checkpoint_kind]
     return [sys.executable, "-m", f"morph_mimic.scripts.{module}", "evaluate", *common]
 
 
@@ -235,7 +235,11 @@ def policy_evaluation_result(args, report):
 
         passed, reasons = acceptance(report)
     else:
-        prefix = "standing" if args.checkpoint_kind == "standing" else "teacher"
+        prefix = ("standing" if args.checkpoint_kind == "standing" else
+                  "student" if args.checkpoint_kind == "acp-student" else "teacher")
+        if prefix == "student" and (report.get("teacher_loaded") is not False
+                                     or report.get("critics_loaded") is not False or report.get("teacher_beta") != 0.):
+            raise ValueError("Student acceptance requires actor-only evaluation without teacher assistance")
         passed, reasons = report.get(f"{prefix}_passed"), report.get(f"{prefix}_failure_reasons")
         if type(passed) is not bool or not isinstance(reasons, list):
             raise ValueError(f"saved policy evaluation lacks explicit {prefix} acceptance results")

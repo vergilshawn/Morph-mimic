@@ -527,5 +527,83 @@ class TestPlannerAttention(unittest.TestCase):
         ))
 
 
+# Paper student architecture; legacy teachers keep their original function.
+
+class TestPaperStudentNetworks(unittest.TestCase):
+    def test_actor_and_both_critics_have_three_hidden_elu_layers(self):
+        from morph_mimic.networks.student import (
+            ARCHITECTURE_CONTRACT, PaperCritic, PaperTrackerActor,
+        )
+
+        actor = PaperTrackerActor()
+        self.assertEqual(actor(torch.zeros(3, 468)).shape, (3, 23))
+        self.assertEqual(ARCHITECTURE_CONTRACT["hidden_activations"], ["ELU"] * 3)
+        self.assertFalse(ARCHITECTURE_CONTRACT["legacy_tracker_function_compatible"])
+        for network in (actor, PaperCritic(353), PaperCritic(298)):
+            with self.subTest(network=type(network).__name__, input_dim=network.body[0].in_features):
+                self.assertEqual(
+                    [type(layer) for layer in network.body],
+                    [nn.Linear, nn.ELU, nn.Linear, nn.ELU, nn.Linear, nn.ELU],
+                )
+                self.assertEqual(
+                    [layer.out_features for layer in network.body if isinstance(layer, nn.Linear)],
+                    [512, 256, 128],
+                )
+                if isinstance(network, PaperCritic):
+                    self.assertEqual(network(torch.zeros(3, network.obs_dim)).shape, (3,))
+
+    def test_final_hidden_elu_changes_actor_and_critic_function(self):
+        from morph_mimic.networks.student import PaperCritic, PaperTrackerActor
+
+        # Isolate a negative third-layer preactivation. Without its ELU this
+        # becomes -1 at the head, which detects the legacy missing activation.
+        for network in (PaperTrackerActor(), PaperCritic(353)):
+            with self.subTest(network=type(network).__name__):
+                with torch.no_grad():
+                    for parameter in network.parameters():
+                        parameter.zero_()
+                    network.body[4].bias[0] = -1.
+                    network.head.weight[0, 0] = 1.
+                value = network(torch.zeros(1, network.body[0].in_features)).reshape(-1)[0]
+                self.assertAlmostEqual(value.item(), np.expm1(-1.), places=6)
+                self.assertGreater(value.item(), -1.)
+
+    def test_student_refuses_privileged_teacher_dimensions(self):
+        from morph_mimic.networks.student import PaperTrackerActor
+
+        with self.assertRaisesRegex(ValueError, "468"):
+            PaperTrackerActor(obs_dim=584)
+        with self.assertRaisesRegex(ValueError, "23"):
+            PaperTrackerActor(num_actions=29)
+        with self.assertRaisesRegex(ValueError, "privileged"):
+            PaperTrackerActor()(torch.zeros(2, 584))
+
+    def test_actor_inference_is_independent_of_critics(self):
+        from morph_mimic.networks.student import PaperCritic, PaperTrackerActor
+
+        actor, critic = PaperTrackerActor(), PaperCritic(353)
+        observation = torch.zeros(2, 468)
+        expected = actor(observation).detach().clone()
+        with torch.no_grad():
+            for parameter in critic.parameters():
+                parameter.fill_(float("nan"))
+        with patch.object(PaperCritic, "forward", side_effect=AssertionError("Critic used during control")):
+            self.assertTrue(torch.equal(actor(observation), expected))
+        self.assertTrue(torch.isfinite(expected).all())
+
+    def test_legacy_teacher_keeps_two_elu_function(self):
+        from morph_mimic.networks.student import PaperTrackerActor
+
+        teacher = TrackerActor(obs_dim=584)
+        self.assertEqual(sum(isinstance(layer, nn.ELU) for layer in teacher.body), 2)
+        with torch.no_grad():
+            for parameter in teacher.parameters():
+                parameter.zero_()
+            teacher.body[4].bias[0] = -1.
+            teacher.head.weight[0, 0] = 1.
+        self.assertEqual(teacher(torch.zeros(1, 584))[0, 0].item(), -1.)
+        self.assertEqual(sum(isinstance(layer, nn.ELU) for layer in PaperTrackerActor().body), 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

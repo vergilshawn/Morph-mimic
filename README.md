@@ -2,9 +2,9 @@
 
 基于 Isaac Lab 的 ACP 复现工程，包含从 supermimic 迁移的 G1 和 mojia 资产。当前在解决单任务箱攀的控制、接触与稳定性，**完整 ACP 多技能复现尚未完成**。
 
-**当前正式训练为 `runs/g1_box_climb_contact_teacher_v3_1024`，仍在迭代。** 最多 15000 轮，每 500 轮完整评估，连续三个不同检查点满足全部门禁才成功停止。最终源码已通过 1024 环境、240 步带噪压力测试、5→6 轮严格保存恢复和完整评估链路；本机启动记录为 `runs/_reports/preflight/contact_surface_v3_readiness.json`。
+**参考教师 `runs/g1_box_climb_contact_teacher_v3_1024` 已在第 6000 轮成功停止。** 第 5000、5500、6000 轮三个不同检查点均完成 600 个真实控制步、箱顶保持和接触稳定各 50/50，状态为 `validated`。这验证的是单动作、名义动力学的参考增强教师；下一阶段为独立的 468 维学生课程，入口见 [课程说明](docs/BOX_CLIMB_PIPELINE.md#教师验收后的学生课程)。
 
-2026-10-28 已核对的正式评估中，**V3 第 3000 轮单次通过全部门禁**；第 3500 轮仍完成箱攀及箱顶保持，但足部参考姿态和三个保持端点的 CoM 支撑余量未过，连续计数由 1/3 重置。3000 轮成功候选权重保留，尚未完成连续三次验收；单次单动作通过不等于完整 ACP 复现。
+2026-10-28 的第 3000 轮曾单次通过，第 3500 轮部分指标退步；后续 5000/5500/6000 连续达标。最终三次根位置 RMSE 分别为 5.59/5.99/6.64cm；三个检查点不是三个独立 seed，尚未完成论文多技能/多种子统计。
 
 V3 仍是 584 维特权参考教师，采用 `reference_q + 0.25 × residual` 与名义动力学。新参考保留原 501 帧，追加 50 帧本地 settle，形成 11 秒动作，再执行 1 秒真实物理保持，共 600 个控制步。新增全身 30 个刚体的真实 normal/friction、作用点与力臂矩，接触表面姿态/法向/stance slip 奖励，以及保持阶段的实际支撑凸包、CoM 与稳定门禁；运动中允许参考手、膝等多部位支撑。
 
@@ -20,7 +20,7 @@ python -m morph_mimic.scripts.check \
 python -m morph_mimic.scripts.inspect --help
 ```
 
-`check` 顺序执行基础回归 → 资产 → 动作/标签/场景契约，失败即停，默认不启动 GPU 或训练。`tests/` 已由 47 个模块合并为 7 个主题模块；默认 272 项必要检查，专项用 `--only regression --suite <组名>` 选择，组名包括 `reference`、`planner`、`auxiliary`、`diagnostics`、`physics`、`all`，可继续用 `--pytest-args` 筛选。详见 [测试分组与命令](tests/README.md)。`inspect` 汇总专项诊断、轨迹渲染和播放，用 `inspect 子命令 --help` 查看参数。
+`check` 顺序执行基础回归 → 资产 → 动作/标签/场景契约，失败即停，默认不启动 GPU 或训练。`tests/` 已由 47 个模块合并为 7 个主题模块；专项用 `--only regression --suite <组名>` 选择，组名包括 `reference`、`planner`、`auxiliary`、`diagnostics`、`physics`、`all`，可继续用 `--pytest-args` 筛选。详见 [测试分组与命令](tests/README.md)。`inspect` 汇总专项诊断、轨迹渲染和播放，用 `inspect 子命令 --help` 查看参数。
 
 Git 仓库包含源码、测试和机器人模型资产；动作、标签、训练权重、评估轨迹与启动验收记录保留在本机。新克隆尚不能直接启动同一训练，数据重建与启动汇总入口的缺口见 [复现边界](docs/REPRODUCTION_PLAN.md#仓库范围与复现边界)。可先安装依赖并运行基础回归；缺失的可选后端或本机夹具会明确跳过：
 
@@ -32,7 +32,7 @@ python -m morph_mimic.scripts.check --only regression --suite basic
 查看训练进度：
 
 ```bash
-tail -n 30 -F runs/g1_box_climb_contact_teacher_v3_1024/progress.log
+tail -n 30 -F runs/g1_box_climb_acp_student_v1_1024/progress.log
 ```
 
 | 路径 | 用途 |
@@ -40,7 +40,8 @@ tail -n 30 -F runs/g1_box_climb_contact_teacher_v3_1024/progress.log
 | `datasets/g1_box_climb_contact_v3/` | 新版 551 帧参考、几何接触标签、绑定场景及来源记录 |
 | `datasets/g1_box_climb_seed_v2/` | 保留的 10 秒训练参考；新参考前 501 帧的来源 |
 | `datasets/external/` | OmniRetarget、PHP、VideoMimic 独有源动作和地形 |
-| `runs/g1_box_climb_contact_teacher_v3_1024/` | 正在运行的新版教师 |
+| `runs/g1_box_climb_contact_teacher_v3_1024/` | 6000 轮已验收的新版教师；冻结保留 |
+| `runs/g1_box_climb_acp_student_v1_1024/` | 已启动的 468 维学生 DAgger；教师混合概率逐步降至零，再独立验收 |
 | `runs/g1_box_climb_reference_teacher_v2_2048/` | 已停止的 v2 基线权重与评估 |
 | `runs/g1_standing_aux_v1_1024/` | 已验收站立模型与证据 |
 | `runs/_reports/` | 统一检查、预检、论文口径审计与历史证据 |

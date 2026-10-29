@@ -27,6 +27,6 @@ python -m morph_mimic.scripts.check \
   --clip climb_03_z_scale_1.0_scene_fit_0000_0501_settle_v3
 ```
 
-当前运行目录为 `runs/g1_box_climb_contact_teacher_v3_1024`，已通过启动检查并开始正式训练；2026-10-28 已核对第 3000 轮单次通过完整新门禁，第 3500 轮部分接触保持指标退步，尚未完成连续三次验收。旧 v2 第 2000 轮仅提供显式 actor 初始化，新的 critic、优化器、噪声和迭代从零开始。
+教师运行目录为 `runs/g1_box_climb_contact_teacher_v3_1024`，已在 6000 轮自动停止：5000/5500/6000 连续三次均通过完整起点与物理保持。该成绩属于 584 维参考增强教师，后续 468 维学生仍须独立验收。旧 v2 第 2000 轮仅提供显式 actor 初始化，教师的 critic、优化器、噪声和迭代从零开始。
 
 输入被正式运行冻结后不得原地改写。派生动作/标签/诊断保持本机，只有本说明随 Git 保存。方法边界见 [论文指标审计](../../docs/PAPER_METRIC_AUDIT.md)，控制和验收见 [箱攀管线](../../docs/BOX_CLIMB_PIPELINE.md)。

@@ -1,8 +1,8 @@
 # G1 箱攀管线与统一检查
 
-目标是从真实起点完成整条箱攀，并在箱顶持续支撑。当前训练目录为 `runs/g1_box_climb_contact_teacher_v3_1024`，已启动并正常迭代。最终通过 1024 环境、240 个带噪控制步压力检查，以及短训练 5→6 轮保存恢复和完整评估链路。
+目标是从真实起点完成整条箱攀，并在箱顶持续支撑。参考教师目录为 `runs/g1_box_climb_contact_teacher_v3_1024`，已在 6000 轮满足连续三次验收后自动停止。其输入、旧网络前向和权重冻结保留；下一阶段使用独立学生目录，不续训或覆盖该教师。
 
-2026-10-28 已核对 V3 第 3000 轮单次全部通过，第 3500 轮仍完成整段箱攀、旧箱顶门禁 50/50 通过，但新增接触保持未过：双足参考姿态超出 0.35rad，11.50–11.54s 三个端点的 CoM 支撑余量低于 5mm。成功候选 3000 权重仍保留；这不是连续三次验收完成，也不代表完整 ACP 多技能结果。权重和详细记录仅在本机。
+2026-10-28 的 3000 轮单次通过、3500 轮退步之后，5000/5500/6000 三个不同检查点均跑满 600 步、12 秒，箱顶与接触保持各 50/50 全过。根 RMSE 为 5.59/5.99/6.64cm，保持期最小 CoM 支撑余量为 +4.27/+7.62/+3.92cm。三个检查点不是三个独立种子，成绩只属于当前单动作名义教师；权重与详细记录在本机。
 
 ## 数据与控制
 
@@ -24,7 +24,7 @@ python -m morph_mimic.scripts.check \
 python -m morph_mimic.scripts.inspect --help
 ```
 
-`check` 按基础回归 → 资产 → 参考/标签/场景契约顺序执行，失败即停；日志位于 `runs/_reports/checks/<UTC时间>/`，`latest.json` 指向最近结果。默认回归包含当前控制所需的 272 项检查；数据转换、Stage 2/3 planner、辅助基线、诊断及 CPU MuJoCo 检查按 `--suite` 选择。七个合并模块的分工见 [测试说明](../tests/README.md)。
+`check` 按基础回归 → 资产 → 参考/标签/场景契约顺序执行，失败即停；日志位于 `runs/_reports/checks/<UTC时间>/`，`latest.json` 指向最近结果。数据转换、Stage 2/3 planner、辅助基线、诊断及 CPU MuJoCo 检查按 `--suite` 选择。七个合并模块的分工见 [测试说明](../tests/README.md)。
 
 ```bash
 # 临时选择检查；仍按依赖顺序执行
@@ -51,7 +51,7 @@ python -m morph_mimic.scripts.check --gpu-only \
   --clip climb_03_z_scale_1.0_scene_fit_0000_0501_settle_v3
 ```
 
-报告区分评估正常完成与技能达标；技能失败保留证据并返回非零退出码。短 GPU 步进只证明链路可运行，不证明站立或箱攀。`--checkpoint-kind acp/standing/teacher-v2/teacher-v3` 分别使用对应契约。
+报告区分评估正常完成与技能达标；技能失败保留证据并返回非零退出码。短 GPU 步进只证明链路可运行，不证明站立或箱攀。`--checkpoint-kind acp/acp-student/standing/teacher-v2/teacher-v3` 分别使用对应契约。
 
 `inspect` 的专项功能包括资产、场景、held 轴、坐标、自碰、接触、分段评估、视频和播放。GUI 策略播放需入口支持相应模型契约；当前 V3 优先使用已保存物理轨迹离线渲染，避免把 584 维教师交给默认 ACP 播放器。
 
@@ -68,6 +68,57 @@ V3 为名义动力学特权教师：584 维 actor 输入，`reference_q + 0.25 �
 - 完整执行、无物理失败或预算截断；根位置 RMSE≤0.15m、最大误差≤0.30m、关节 RMSE≤0.30rad、根朝向 RMSE≤0.50rad、held 最大偏离≤0.01rad。
 - 50 个额外保持端点全部通过旧箱顶门禁：根高度/倾斜、双足箱顶支撑中心余量、足底高度及双足当前正向 Fz 各≥20N。
 - 50 个端点还全部通过全身实测门禁：无额外身体承重、有效实际受力支撑凸包、CoM 内侧余量与速度、双足姿态；传感器健康和容量检查通过。
+
+## 教师验收后的学生课程
+
+论文主 actor 为 468→512 ELU→256 ELU→128 ELU→23，动作以 nominal 关节角为基准。已验收教师为 584 维参考增强输入，以 reference 关节角为基准。Critic 只在 PPO 学习时计算价值/优势，评估中仅 actor 出动作。2026-10-29 发现旧 `tracker.py` 缺第三隐藏层 ELU；为保持旧权重函数，新增版本化 `networks/student.py`，不原地修改旧教师。论文细节与边界见 [指标审计](PAPER_METRIC_AUDIT.md)。
+
+独立入口为 `python -m morph_mimic.scripts.inspect student <mode>`（亦可直接 `python -m morph_mimic.scripts.train_acp_student <mode>`）。课程分两段：
+
+1. **行为模仿/DAgger 桥接**：固定第 6000 轮教师，学生仅接收 468 维。最初 200 轮使用教师动作，之后 800 轮将教师执行概率线性降至零，随后完全学生控制；教师继续仅为学生访问的状态提供训练标签。以 `a_student=(q_ref_postadvance-q_nominal)/0.25+clip(a_teacher)` 转换，禁止直接复制 residual；双网络分别维护五帧动作历史。标签越过学生动作上限时明确拒绝，不能静默裁剪破坏 PD 目标等价。
+2. **Stage 1 PPO**：必须先有三个不同、完全学生控制的完整起点验收。然后只转移学生 actor，新 critic/优化器/探索噪声/迭代从头开始；使用 CSI 和原 ACP 基础奖励。当前先保留名义动力学，完整随机化再独立验收。DAgger 与额外箱顶门禁是本地桥接，不能写成论文已经采用教师蒸馏。
+
+本机学生已在 `runs/g1_box_climb_acp_student_v1_1024` 启动，教师目录保持 `validated`。它使用汇总的 `runs/_reports/preflight/student_curriculum_v1_readiness.json`，包含全量 CPU 回归、1024 环境预检与保存恢复、教师目标完整 600 步等价回放，以及学生无教师评估的负例门禁。下面是新实验的原始预检/启动示例；现有目录/报告不要重复执行或覆盖，应选择新名称：
+
+```bash
+conda activate env_isaaclab_2
+python -m morph_mimic.scripts.inspect student preflight \
+  --num-envs 1024 --max-iterations 2 --chunk-iterations 1 \
+  --run-dir runs/_reports/preflight/student_curriculum_v1_1024 \
+  --out runs/_reports/preflight/student_curriculum_v1_1024.json
+
+python -m morph_mimic.scripts.inspect student supervise \
+  --phase dagger --num-envs 1024 --max-iterations 6000 --chunk-iterations 500 \
+  --run-dir runs/g1_box_climb_acp_student_v1_1024 \
+  --readiness-report runs/_reports/preflight/student_curriculum_v1_1024.json
+```
+
+监督训练每 500 轮独立启动完整评估。评估只加载学生，无 teacher/critic、无动作混合；仍运行 600 个真实控制步、50 个保持端点。训练混合概率尚非零的检查点，即使单次评估通过也不计入三连验收。物理预检通过只说明可以开始学习，不说明学生已学会箱攀。
+
+```bash
+tail -n 30 -F runs/g1_box_climb_acp_student_v1_1024/progress.log
+```
+
+保存学生检查点后的评估与轨迹渲染分别使用统一入口：
+
+```bash
+python -m morph_mimic.scripts.check --gpu-only --checkpoint-kind acp-student \
+  --checkpoint runs/g1_box_climb_acp_student_v1_1024/checkpoints/iter000500.pt \
+  --clip climb_03_z_scale_1.0_scene_fit_0000_0501_settle_v3
+# 渲染命令同下节，只将 --trace 指向新学生 evaluations/*.npz。
+```
+
+PPO 使用新的独立目录，并显式提供学生验收状态文件与最后一个成功学生权重。`--admission-report` 是三连成功的学生 `supervisor_status.json`，不是教师状态或单次评估：
+
+```bash
+python -m morph_mimic.scripts.inspect student supervise --phase ppo \
+  --run-dir runs/g1_box_climb_acp_student_ppo_v1_1024 --num-envs 1024 \
+  --initialize-actor runs/g1_box_climb_acp_student_v1_1024/checkpoints/iterNNNNNN.pt \
+  --admission-report runs/g1_box_climb_acp_student_v1_1024/supervisor_status.json \
+  --readiness-report runs/_reports/preflight/student_curriculum_v1_1024.json
+```
+
+把 `iterNNNNNN` 替换为学生三连验收状态记录中的最后一个检查点。DAgger checkpoint 不能作为 PPO `--resume`；直接截断教师首层或把 584 权重交给 468 入口也不允许。
 
 连续三个不同检查点通过才自动停止为 `validated`；达到预算仍不成功为 `budget_exhausted`，执行异常为 `failed`。站立辅助任务、局部片段和到达参考片尾均不能代替该验收。最终启动检查见 [readiness.json](../runs/_reports/preflight/contact_surface_v3_readiness.json)。正式运行冻结了 32 个源码文件；输入与源码哈希漂移会拒绝继续训练。足部探索曾产生 33 个接触点，最终导出容量设为每刚体 128 点，并保留溢出、映射和力重建健康门禁。
 

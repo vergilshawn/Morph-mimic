@@ -118,6 +118,7 @@ class TestCheckEntrypoint(unittest.TestCase):
     def test_gpu_checkpoint_kind_dispatch_has_no_training_command(self):
         for kind, module in [("teacher-v2", "train_reference_teacher_v2"),
                              ("teacher-v3", "train_reference_teacher_v3"),
+                             ("acp-student", "train_acp_student"),
                              ("standing", "train_standing_baseline")]:
             with self.subTest(kind=kind):
                 args = self.arguments("--checkpoint", "actor.pt", "--clip", "climb", "--checkpoint-kind", kind)

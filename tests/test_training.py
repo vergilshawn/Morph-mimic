@@ -1372,3 +1372,479 @@ class TestStandingSupervisor(unittest.TestCase):
             status, _ = self.run_supervisor(directory, [True, False, True, True], 1000)
             self.assertEqual(status["state"], "budget_exhausted")
             self.assertEqual([r["consecutive_successes"] for r in status["evaluations"]], [1,0,1,2])
+
+
+# Finite-observation student curriculum
+
+class TestStudentCurriculum(unittest.TestCase):
+    def test_controller_conversion_preserves_post_advance_pd_target_and_round_trips(self):
+        from morph_mimic.utils.student_curriculum import teacher_to_student_action, student_to_teacher_action
+
+        nominal = torch.linspace(-.3, .3, 23, dtype=torch.float64)
+        reference_post = nominal[None].repeat(2, 1) + torch.tensor([[.2], [-.1]])
+        teacher = torch.linspace(-1., 1., 46, dtype=torch.float64).reshape(2, 23)
+        student = teacher_to_student_action(reference_post, nominal, teacher)
+        torch.testing.assert_close(nominal + .25*student, reference_post + .25*teacher)
+        torch.testing.assert_close(student_to_teacher_action(student, reference_post, nominal), teacher)
+        # Using the pre-advance reference would produce a different actuator target.
+        self.assertFalse(torch.allclose(nominal + .25*student, reference_post-.03 + .25*teacher))
+
+    def test_teacher_clip_is_applied_but_student_target_is_never_silently_clipped(self):
+        from morph_mimic.utils.student_curriculum import teacher_to_student_action, student_to_teacher_action
+
+        nominal, reference = torch.zeros(23), torch.zeros(1, 23)
+        command = torch.full((1, 23), 30.)
+        torch.testing.assert_close(teacher_to_student_action(reference, nominal, command), torch.full((1,23),20.))
+        with self.assertRaisesRegex(ValueError, "outside student_clip"):
+            teacher_to_student_action(reference+.01, nominal, command)
+        # The history conversion must preserve off-policy commands even beyond
+        # the expert's residual bound, rather than pretending it executed less.
+        actual = student_to_teacher_action(torch.full((1, 23), 20.), reference-1., nominal)
+        torch.testing.assert_close(actual, torch.full((1,23),24.))
+
+    def test_action_validation_rejects_nonfinite_shape_dtype_and_invalid_bounds(self):
+        from morph_mimic.utils.student_curriculum import teacher_to_student_action, student_to_teacher_action
+
+        nominal, reference, command = torch.zeros(23), torch.zeros(2, 23), torch.zeros(2, 23)
+        for invalid in (torch.zeros(2, 22), torch.zeros(23), torch.full((2,23),float("nan")),
+                        torch.zeros(2,23,dtype=torch.int64), torch.zeros(2,23,dtype=torch.float64)):
+            with self.subTest(shape=invalid.shape, dtype=invalid.dtype):
+                with self.assertRaises(ValueError):
+                    teacher_to_student_action(reference, nominal, invalid)
+                with self.assertRaises(ValueError):
+                    student_to_teacher_action(invalid, reference, nominal)
+        for invalid in (torch.zeros(22), torch.zeros(1,23), torch.full((23,),float("inf"))):
+            with self.assertRaises(ValueError):
+                teacher_to_student_action(reference, invalid, command)
+        for key in ("scale", "teacher_clip", "student_clip"):
+            for invalid in (0., -1., float("nan"), float("inf"), True, "1"):
+                with self.subTest(parameter=key, value=invalid):
+                    with self.assertRaises(ValueError):
+                        teacher_to_student_action(reference, nominal, command, **{key: invalid})
+        with self.assertRaises(ValueError):
+            student_to_teacher_action(command, reference, nominal, scale=0.)
+
+    def test_teacher_history_conversion_replaces_only_five_action_slices(self):
+        from morph_mimic.utils.student_curriculum import teacher_observation
+
+        student = torch.arange(3*468, dtype=torch.float64).reshape(3,468)
+        reference = torch.arange(3*116, dtype=torch.float64).reshape(3,116)
+        residual = -torch.arange(3*5*23, dtype=torch.float64).reshape(3,5,23)
+        before = student.clone()
+        result = teacher_observation(student, reference, residual)
+        self.assertEqual(result.shape, (3,584))
+        torch.testing.assert_close(result[:,468:], reference)
+        physical = result[:,:375].reshape(3,5,75)
+        torch.testing.assert_close(physical[:,:,:52], student[:,:375].reshape(3,5,75)[:,:,:52])
+        torch.testing.assert_close(physical[:,:,52:], residual)
+        torch.testing.assert_close(result[:,375:468], student[:,375:468])
+        torch.testing.assert_close(student, before)
+
+    def test_teacher_observation_validation_and_empty_batch(self):
+        from morph_mimic.utils.student_curriculum import teacher_observation
+
+        student, reference, residual = torch.zeros(2,468), torch.zeros(2,116), torch.zeros(2,5,23)
+        for inputs in ((student[:,:467],reference,residual), (student,reference[:,:115],residual),
+                       (student,reference,residual[:,:4]), (student,reference.double(),residual),
+                       (student,reference,torch.full_like(residual,float("nan")))):
+            with self.assertRaises(ValueError):
+                teacher_observation(*inputs)
+        self.assertEqual(teacher_observation(student[:0],reference[:0],residual[:0]).shape,(0,584))
+
+    def test_beta_boundaries_and_fractional_progress(self):
+        from morph_mimic.utils.student_curriculum import beta_schedule
+
+        self.assertEqual([beta_schedule(i,10,20) for i in (0,10,15,20,30,40)], [1.,1.,.75,.5,0.,0.])
+        self.assertAlmostEqual(beta_schedule(10.5,10.,20.),.975)
+        self.assertEqual(beta_schedule(0,0,20),1.)
+
+    def test_beta_rejects_invalid_iteration_and_durations(self):
+        from morph_mimic.utils.student_curriculum import beta_schedule
+
+        for name in ("iteration","teacher_only_iterations","anneal_iterations"):
+            for invalid in (-1.,float("inf"),float("nan"),True,"2"):
+                args = dict(iteration=0,teacher_only_iterations=10,anneal_iterations=20)
+                args[name] = invalid
+                with self.subTest(parameter=name,value=invalid):
+                    with self.assertRaises(ValueError):
+                        beta_schedule(**args)
+        with self.assertRaises(ValueError):
+            beta_schedule(0,10,0)
+
+
+class _StudentRuntimeBase:
+    """Small physical-step protocol: reference time advances before applying PD."""
+
+    def __init__(self):
+        self.num_envs, self.device = 2, torch.device("cpu")
+        self.cfg = NS(action_scale=.25, action_clip=20.)
+        self.default_pose = torch.linspace(-.3, .3, 27)
+        self.controlled_idx = torch.arange(1, 24)
+        self.phase = torch.zeros(2)
+        self.actions = torch.zeros(2, 23)
+        self.proprio_history = torch.zeros(2, 5, 75)
+        self.tail = torch.arange(186, dtype=torch.float32).reshape(2, 93)
+        self.base_apply_calls = 0
+
+    def _ref_sample(self):
+        q = self.default_pose[self.controlled_idx][None] + .1 + self.phase[:, None] * .2
+        return {"joint_pos": q}
+
+    def _pre_physics_step(self, actions):
+        self.actions = actions.clamp(-self.cfg.action_clip, self.cfg.action_clip).clone()
+        self.phase += .1
+
+    def _apply_action(self):
+        self.base_apply_calls += 1
+        self.target = self.default_pose[None].repeat(self.num_envs, 1)
+        self.target[:, self.controlled_idx] += self.cfg.action_scale * self.actions
+
+    def _get_observations(self, record=True):
+        self.proprio_history[:, :-1] = self.proprio_history[:, 1:].clone()
+        self.proprio_history[:, -1, :52] = self.phase[:, None] * 100 + torch.arange(52)
+        self.proprio_history[:, -1, 52:] = self.actions
+        return {"policy": torch.cat((self.proprio_history.flatten(1), self.tail), dim=1)}
+
+    def _reset_idx(self, ids):
+        selected = slice(None) if ids is None else ids
+        self.phase[selected] = 0.
+        self.actions[selected] = 0.
+        self.proprio_history[selected] = 0.
+
+    def _sample_csi_initial_phase(self, ids):
+        return torch.full((len(ids),), .125)
+
+    def _get_rewards(self):
+        return torch.ones(self.num_envs)
+
+
+class _StudentRuntimeParent(_StudentRuntimeBase):
+    def _get_observations(self, record=True):
+        result = super()._get_observations(record=record)
+        result["policy"] = self._teacher_observation(result["policy"])
+        return result
+
+    def _apply_action(self):
+        raise AssertionError("Student must bypass the reference-baseline actuator path")
+
+    def _sample_csi_initial_phase(self, ids):
+        return torch.full((len(ids),), .75)
+
+    def _get_rewards(self):
+        return torch.full((self.num_envs,), 2.)
+
+
+def _student_runtime(*, sampler="stratified", reward_profile="contact_aux"):
+    from morph_mimic.scripts import train_acp_student as student
+
+    with patch.object(student.v3, "teacher_environment_class", return_value=_StudentRuntimeParent):
+        env_class = student.student_environment_class(_StudentRuntimeBase, {}, Path("unused.npz"),
+            sampler=sampler, reward_profile=reward_profile)
+    return env_class()
+
+
+class TestAcpStudentRuntime(unittest.TestCase):
+    def test_expert_label_uses_post_advance_reference_and_preserves_teacher_pd_target(self):
+        from morph_mimic.scripts import train_acp_student as student
+
+        env = _student_runtime()
+        observation = env._get_observations()["policy"]
+        pre_advance = env._ref_sample()["joint_pos"].clone()
+        residual = torch.linspace(-.5, .5, 46).reshape(2, 23)
+        with patch.object(student.v1, "reference_features", return_value=torch.zeros(2, 116)):
+            env.query_expert(observation, lambda _: residual, beta=1.)
+        env._pre_physics_step(torch.full((2, 23), -3.))
+        env._apply_action()
+        post_advance = env._ref_sample()["joint_pos"]
+        expected = post_advance + .25 * residual
+        torch.testing.assert_close(env.target[:, env.controlled_idx], expected)
+        torch.testing.assert_close(env._expert_label,
+            (post_advance-env.default_pose[env.controlled_idx])/.25 + residual)
+        self.assertFalse(torch.allclose(expected, pre_advance+.25*residual))
+        self.assertEqual(env.base_apply_calls, 1)
+        self.assertIsNone(env._pending_expert)
+        torch.testing.assert_close(env._executed_expert_residual, residual)
+
+    def test_zero_beta_executes_nominal_student_target_even_when_expert_is_queried(self):
+        from morph_mimic.scripts import train_acp_student as student
+
+        env = _student_runtime()
+        observation = env._get_observations()["policy"]
+        command = torch.linspace(-30., 30., 46).reshape(2, 23)
+        with patch.object(student.v1, "reference_features", return_value=torch.ones(2, 116)):
+            env.query_expert(observation, lambda _: torch.full((2,23), 4.), beta=0.)
+        env._pre_physics_step(command)
+        env._apply_action()
+        actual = command.clamp(-20., 20.)
+        nominal = env.default_pose[env.controlled_idx]
+        torch.testing.assert_close(env.target[:, env.controlled_idx], nominal+.25*actual)
+        torch.testing.assert_close(env.actions, actual)
+        self.assertFalse(torch.allclose(env.actions, env._expert_label))
+        torch.testing.assert_close(env._executed_expert_residual,
+            actual+(nominal-env._ref_sample()["joint_pos"])/.25)
+
+    def test_student_only_execution_has_no_expert_or_reference_target_baseline(self):
+        env = _student_runtime()
+        observation = env._get_observations()["policy"]
+        self.assertEqual(observation.shape, (2, 468))
+        env._pre_physics_step(torch.full((2, 23), -.4))
+        env._apply_action()
+        torch.testing.assert_close(env.target[:, env.controlled_idx],
+            env.default_pose[env.controlled_idx][None].expand(2,23)-.1)
+        self.assertFalse(hasattr(env, "_expert_label"))
+        self.assertIs(env._teacher_observation(observation), observation)
+        with self.assertRaisesRegex(ValueError, "exactly 468"):
+            env._teacher_observation(torch.zeros(2, 584))
+
+    def test_five_frame_teacher_history_tracks_executed_actions_without_student_feature_leakage(self):
+        from morph_mimic.scripts import train_acp_student as student
+
+        env = _student_runtime()
+        observation = env._get_observations()["policy"]
+        expected_history = torch.zeros(2, 5, 23)
+        features = torch.full((2, 116), 123456.)
+        captured = []
+        def teacher(value):
+            captured.append(value.clone())
+            return torch.full((2,23), -3.)
+        for index in range(7):
+            before = observation.clone()
+            with patch.object(student.v1, "reference_features", return_value=features):
+                env.query_expert(observation, teacher, beta=0.)
+            expert = captured[-1]
+            torch.testing.assert_close(expert[:,468:], features)
+            torch.testing.assert_close(expert[:,:375].reshape(2,5,75)[:,:,:52],
+                before[:,:375].reshape(2,5,75)[:,:,:52])
+            torch.testing.assert_close(expert[:,:375].reshape(2,5,75)[:,:,52:], expected_history)
+            torch.testing.assert_close(expert[:,375:468], before[:,375:468])
+            torch.testing.assert_close(observation, before)
+            self.assertFalse(bool((observation == 123456.).any()))
+            command = torch.full((2,23), (index+1)*.3)
+            env._pre_physics_step(command)
+            residual = command + (env.default_pose[env.controlled_idx]-env._ref_sample()["joint_pos"])/.25
+            expected_history[:,:-1] = expected_history[:,1:].clone()
+            expected_history[:,-1] = residual
+            observation = env._get_observations()["policy"]
+            torch.testing.assert_close(env._expert_history, expected_history)
+            torch.testing.assert_close(observation[:,:375].reshape(2,5,75)[:,-1,52:], command)
+        self.assertEqual(len(captured), 7)
+        self.assertFalse(torch.allclose(env._expert_history,
+            observation[:,:375].reshape(2,5,75)[:,:,52:]))
+
+    def test_partial_and_full_resets_clear_only_matching_expert_history(self):
+        env = _student_runtime()
+        env._get_observations()
+        env._expert_history[:] = torch.arange(230.).reshape(2,5,23)
+        env._executed_expert_residual[:] = 3.
+        untouched = env._expert_history[1].clone()
+        env._reset_idx(torch.tensor([0]))
+        torch.testing.assert_close(env._expert_history[0], torch.zeros(5,23))
+        torch.testing.assert_close(env._expert_history[1], untouched)
+        torch.testing.assert_close(env._executed_expert_residual[0], torch.zeros(23))
+        torch.testing.assert_close(env._executed_expert_residual[1], torch.full((23,), 3.))
+        env._reset_idx(None)
+        self.assertFalse(bool(env._expert_history.any()))
+        self.assertFalse(bool(env._executed_expert_residual.any()))
+
+    def test_paper_ppo_restores_base_csi_and_base_rewards_while_dagger_retains_auxiliary_path(self):
+        dagger = _student_runtime()
+        ppo = _student_runtime(sampler="paper_csi", reward_profile="paper_base")
+        ids = torch.tensor([0,1])
+        torch.testing.assert_close(dagger._sample_csi_initial_phase(ids), torch.full((2,), .75))
+        torch.testing.assert_close(ppo._sample_csi_initial_phase(ids), torch.full((2,), .125))
+        torch.testing.assert_close(dagger._get_rewards(), torch.full((2,), 2.))
+        torch.testing.assert_close(ppo._get_rewards(), torch.ones(2))
+
+
+class TestAcpStudentContracts(unittest.TestCase):
+    @staticmethod
+    def checkpoint():
+        from morph_mimic.scripts import train_acp_student as student
+
+        base = {"observations": {}, "physics": {}, "training": {}}
+        contract = student.augment_contract(base, {"box": "geometry"}, {"surface": "measured"},
+            NS(reward_profile="paper_base", phase="ppo"))
+        return dict(schema=2, robot="g1", stage=1, contract=contract)
+
+    def test_student_contract_requires_finite_inputs_nominal_targets_and_exact_activation_architecture(self):
+        from morph_mimic.scripts import train_acp_student as student
+
+        value = self.checkpoint()
+        student.require_student_checkpoint(value)
+        self.assertNotIn("reference_teacher", value["contract"]["observations"])
+        variants = []
+        for key, replacement in (("policy_dim",584), ("action_dim",29),
+                                 ("reference_teacher",deepcopy(v3.TEACHER_CONTRACT))):
+            bad = deepcopy(value)
+            bad["contract"]["observations"][key] = replacement
+            variants.append(bad)
+        for key in ("student_curriculum",):
+            bad = deepcopy(value)
+            del bad["contract"]["observations"][key]
+            variants.append(bad)
+        bad = deepcopy(value)
+        bad["contract"]["observations"]["student_curriculum"]["architecture"]["hidden_activations"][-1] = "Identity"
+        variants.append(bad)
+        bad = deepcopy(value)
+        bad["contract"]["physics"]["joint_target_semantics"] = v3.TEACHER_CONTRACT["action"]
+        variants.append(bad)
+        for bad in variants:
+            with self.subTest(contract=bad["contract"]):
+                with self.assertRaisesRegex(ValueError, "finite 468D"):
+                    student.require_student_checkpoint(bad)
+
+    def test_replay_resume_preserves_wrapped_rows_and_future_overwrites(self):
+        from morph_mimic.scripts.train_acp_student import Replay
+
+        replay = Replay(5, "cpu")
+        def batch(values):
+            ids = torch.tensor(values, dtype=torch.float32)
+            return ids[:,None].expand(-1,468).clone(), (-ids[:,None]).expand(-1,23).clone()
+        replay.add(*batch([0,1,2]))
+        replay.add(*batch([3,4,5,6]))
+        self.assertEqual((replay.size,replay.position), (5,2))
+        self.assertEqual(set(replay.observations[:,0].tolist()), {2.,3.,4.,5.,6.})
+        snapshot = replay.state()
+        restored = Replay(5, "cpu")
+        restored.load(snapshot)
+        replay.observations.fill_(-100.)
+        self.assertNotEqual(float(snapshot["observations"][0,0]), -100.)
+        replay.load(snapshot)
+        for values in ([7,8,9], list(range(10,18))):
+            replay.add(*batch(values))
+            restored.add(*batch(values))
+            self.assertEqual((replay.size,replay.position), (restored.size,restored.position))
+            torch.testing.assert_close(replay.observations, restored.observations)
+            torch.testing.assert_close(replay.actions, restored.actions)
+        self.assertEqual(set(replay.observations[:,0].tolist()), set(map(float, range(13,18))))
+        torch.testing.assert_close(replay.actions[:,0], -replay.observations[:,0])
+        with self.assertRaisesRegex(ValueError, "capacity changed"):
+            Replay(6,"cpu").load(snapshot)
+
+
+class TestAcpStudentAdmission(unittest.TestCase):
+    @staticmethod
+    def evidence(directory):
+        from morph_mimic.scripts import train_acp_student as student
+
+        directory = Path(directory)
+        evaluations, reports = [], []
+        for number in range(3):
+            actor = directory/f"actor{number}.pt"
+            actor.write_bytes(f"distinct student weights {number}".encode())
+            digest = student.file_hash(actor)
+            report = dict(teacher_loaded=False, critics_loaded=False, teacher_beta=0.,
+                student_curriculum=deepcopy(student.STUDENT_CONTRACT), checkpoint_sha256=digest)
+            report_path = directory/f"evaluation{number}.json"
+            report_path.write_text(json.dumps(report))
+            evaluations.append(dict(checkpoint_sha256=digest, passed=True,
+                teacher_beta_during_training=0., report=str(report_path)))
+            reports.append(report)
+        status = dict(state="validated", consecutive_successes=3,
+            student_curriculum=deepcopy(student.STUDENT_CONTRACT), evaluations=evaluations)
+        status_path = directory/"supervisor_status.json"
+        status_path.write_text(json.dumps(status))
+        return status_path, actor, status, reports
+
+    def test_admission_requires_three_distinct_consecutive_validated_student_checkpoints(self):
+        from morph_mimic.scripts import train_acp_student as student
+
+        with tempfile.TemporaryDirectory() as directory:
+            path, actor, status, _ = self.evidence(directory)
+            with patch.object(student.v3, "task_acceptance", return_value=(True, [])) as strict:
+                student.require_ppo_admission(path, actor)
+                self.assertEqual(strict.call_count, 3)
+                variants = []
+                single = deepcopy(status)
+                single["evaluations"] = single["evaluations"][-1:]
+                variants.append(single)
+                duplicate = deepcopy(status)
+                duplicate["evaluations"][0] = deepcopy(duplicate["evaluations"][1])
+                variants.append(duplicate)
+                variants.extend(status | update for update in (
+                    {"state": "running"}, {"consecutive_successes": 2}))
+                for value in variants:
+                    with self.subTest(state=value):
+                        path.write_text(json.dumps(value))
+                        with self.assertRaisesRegex(ValueError, "three distinct validated"):
+                            student.require_ppo_admission(path, actor)
+
+    def test_assisted_training_or_teacher_critic_execution_and_failed_physics_never_admit(self):
+        from morph_mimic.scripts import train_acp_student as student
+
+        with tempfile.TemporaryDirectory() as directory:
+            path, actor, status, reports = self.evidence(directory)
+            report_path = Path(status["evaluations"][0]["report"])
+            cases = (
+                ({"teacher_beta_during_training": .1}, {}),
+                ({"passed": False}, {}),
+                ({}, {"teacher_loaded": True}),
+                ({}, {"critics_loaded": True}),
+                ({}, {"teacher_beta": .01}),
+            )
+            with patch.object(student.v3, "task_acceptance", return_value=(True, [])):
+                for item_update, report_update in cases:
+                    with self.subTest(item=item_update, report=report_update):
+                        value = deepcopy(status)
+                        value["evaluations"][0].update(item_update)
+                        path.write_text(json.dumps(value))
+                        report_path.write_text(json.dumps(reports[0] | report_update))
+                        with self.assertRaisesRegex(ValueError, "assisted, partial, or failed"):
+                            student.require_ppo_admission(path, actor)
+            path.write_text(json.dumps(status))
+            report_path.write_text(json.dumps(reports[0]))
+            with patch.object(student.v3, "task_acceptance", return_value=(False, ["physical_hold_failed"])):
+                with self.assertRaisesRegex(ValueError, "assisted, partial, or failed"):
+                    student.require_ppo_admission(path, actor)
+
+    def test_admission_binds_actor_bytes_and_each_evaluation_checkpoint_hash(self):
+        from morph_mimic.scripts import train_acp_student as student
+
+        with tempfile.TemporaryDirectory() as directory:
+            path, actor, status, reports = self.evidence(directory)
+            original = actor.read_bytes()
+            with patch.object(student.v3, "task_acceptance", return_value=(True, [])):
+                actor.write_bytes(b"a different or subsequently overwritten actor")
+                with self.assertRaisesRegex(ValueError, "three distinct validated"):
+                    student.require_ppo_admission(path, actor)
+                actor.write_bytes(original)
+                report_path = Path(status["evaluations"][0]["report"])
+                report_path.write_text(json.dumps(reports[0] | {"checkpoint_sha256": "wrong checkpoint"}))
+                with self.assertRaisesRegex(ValueError, "assisted, partial, or failed"):
+                    student.require_ppo_admission(path, actor)
+
+    def test_cli_refuses_silent_overwrite_of_an_existing_student_run(self):
+        import io
+        from morph_mimic.scripts import train_acp_student as student
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            teacher = root/"teacher.pt"
+            teacher.write_bytes(b"frozen teacher fixture")
+            run = root/"existing_run"
+            run.mkdir()
+            (run/"final.pt").write_bytes(b"valuable existing student weights")
+            errors = io.StringIO()
+            with patch("sys.stderr", errors), self.assertRaises(SystemExit) as raised:
+                student.arguments(["train", "--teacher", str(teacher), "--run-dir", str(run)])
+            self.assertEqual(raised.exception.code, 2)
+            self.assertIn("already contains weights", errors.getvalue())
+            self.assertEqual((run/"final.pt").read_bytes(), b"valuable existing student weights")
+
+    def test_ppo_refuses_dagger_resume_and_missing_optimizer_state_before_simulator_launch(self):
+        from morph_mimic.scripts import train_acp_student as student
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/"student.pt"
+            checkpoint = TestAcpStudentContracts.checkpoint()
+            for update in (
+                {"curriculum_kind": "dagger", "ppo": {key: {} for key in
+                    ("actor", "critic_m", "critic_fs", "opt_main", "opt_fs")}},
+                {"curriculum_kind": "ppo", "ppo": {"actor": {}}},
+            ):
+                with self.subTest(curriculum=update["curriculum_kind"]):
+                    torch.save(checkpoint | update, path)
+                    with patch("morph_mimic.launcher.launch") as launch:
+                        with self.assertRaisesRegex(ValueError, "PPO resume requires its own PPO"):
+                            student.train_ppo(NS(resume=path))
+                        launch.assert_not_called()

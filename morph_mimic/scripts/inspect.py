@@ -29,6 +29,7 @@ COMMANDS = {
     "play": ("morph_mimic.diagnostics.play", "interactive policy playback (GPU)"),
     "contacts": ("morph_mimic.scripts.evaluate_contact_trajectory", "recorded contact events and coverage"),
     "evaluate": ("morph_mimic.scripts.evaluate", "strict full-reference policy evaluation (GPU)"),
+    "student": ("morph_mimic.scripts.train_acp_student", "468D nominal-action student curriculum; mode required (GPU)"),
 }
 
 
